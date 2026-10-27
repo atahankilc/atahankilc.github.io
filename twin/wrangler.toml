@@ -4,9 +4,10 @@ compatibility_date = "2026-10-01"
 preview_urls = false
 
 [vars]
-# gpt-5-nano: the cheapest OpenAI text model ($0.05 in / $0.005 cached / $0.40 out per 1M tokens).
-# Fallback without reasoning: "gpt-4.1-nano" ($0.10 / $0.025 / $0.40).
-MODEL = "gpt-5-nano"
+# gpt-5-mini ($0.25 in / $0.025 cached / $2.00 out per 1M tokens): nano mixed up facts and repeated itself.
+# Cheaper: "gpt-5-nano". REASONING: minimal | low | medium (gpt-5.1+ use none instead of minimal).
+MODEL = "gpt-5-mini"
+REASONING = "low"
 # Only the live site. Local dev origins go in .dev.vars (never deployed).
 ALLOWED_ORIGINS = "https://atahankilc.github.io"
 # Hard daily caps on OpenAI calls (counted in the Budget Durable Object, reset at 00:00 UTC).

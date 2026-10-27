@@ -7,10 +7,13 @@
 <meta name="description" content="Talk to the digital twin of Atahan Kılıç, an AI & full-stack software engineer in Munich. Ask about projects, experience and how to reach him.">
 <link href="assets/fonts/vt323.css" rel="stylesheet">
 <style>
-  html,body{margin:0;height:100%;background:#050505;overflow:hidden}
-  canvas#crt{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;cursor:text;touch-action:pan-y}
+  html,body{margin:0;height:100%;background:#050505;overflow:hidden;overscroll-behavior:none}
+  /* touch scrolling is done by hand (rows + momentum), so the browser must not pan, zoom or call up the image menu */
+  canvas#crt{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;cursor:text;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
   canvas#crt.link{cursor:pointer}
   #kbd{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px}
+  /* phones: the real input lies over the drawn prompt, so a tap there is a native tap (keyboard, caret, paste) */
+  #kbd.dock{z-index:2;margin:0;box-sizing:border-box;outline:0;background:transparent;font-family:VT323,monospace;-webkit-tap-highlight-color:transparent}
   /* the one thing that can't live inside the shader: a live, interactive website */
   #live{position:fixed;display:none;z-index:3;background:#000}
   #live.on{display:block}
@@ -141,7 +144,7 @@ function box(title, inner, cols, maxW = 96) {
   const W = Math.min(cols, maxW), iw = W - 4, rows = inner(iw);
   const top = "┌─ " + title + " " + "─".repeat(Math.max(0, W - title.length - 5)) + "┐";
   const out = [[S(top, DIM)]];
-  rows.forEach((r) => { r = clip(r, iw); out.push([S("│ ", DIM), ...r, S(" ".repeat(Math.max(0, iw - rowLen(r))) + " │", DIM)]); });
+  rows.flatMap((r) => rewrap(r, iw)).forEach((r) => { r = clip(r, iw); out.push([S("│ ", DIM), ...r, S(" ".repeat(Math.max(0, iw - rowLen(r))) + " │", DIM)]); });
   out.push([S("└" + "─".repeat(W - 2) + "┘", DIM)]);
   return out;
 }
@@ -151,6 +154,22 @@ function flow(segs, cols) {
   // wrap whole segments (buttons, tags) onto new rows instead of cutting them
   const rows = [[]];
   for (const s of segs) { const r = rows[rows.length - 1]; if (rowLen(r) + s.t.length > cols && rowLen(r) > 0) { if (!s.t.trim()) continue; rows.push([s]); } else r.push(s); }
+  return rows.flatMap((r) => rewrap(r, cols));   // a segment wider than the whole line still breaks between words
+}
+// a row too wide for its space breaks between words (keeping each word's style and action) instead of losing its end;
+// bars and no-break runs stay whole unless they alone are wider than the line
+function rewrap(r, n) {
+  if (rowLen(r) <= n) return [r];
+  const rows = [[]];
+  for (const s of r) {
+    const words = s.bar ? [s.t] : s.t.length > n ? s.t.replace(/ /g, " ").split(/( +)/) : s.t.split(/( +)/);
+    for (const w of words) {
+      if (!w) continue;
+      const cur = rows[rows.length - 1];
+      if (rowLen(cur) + w.length > n && rowLen(cur) > 0) { if (!w.trim()) continue; rows.push([]); }
+      rows[rows.length - 1].push({ ...s, t: w });
+    }
+  }
   return rows;
 }
 const NB = (s) => s.replace(/ /g, "\u00a0");
@@ -169,7 +188,7 @@ const W = {
         const rows = [...flow([S(NB(C.name.toUpperCase()), HOT), gap(3), S(NB(`${C.role} · ${C.location}`), TXT)], iw)], cur = [];
         wrapInto(rows, cur, `"${C.tagline}"`, DIM, iw); rows.push(cur.splice(0), []);
         // three panels side by side; stacked full width when the screen is narrow
-        const across = iw >= 60 ? 3 : 1, pw = Math.floor((iw - (across - 1)) / across), cw = pw - 4;
+        const across = iw >= 60 ? 3 : 1, pw = Math.floor((iw - (across - 1)) / across), cw = across === 1 ? iw : pw - 4;
         const panels = C.glance.map((g) => {
           const body = [];
           g.items.forEach(([head, sub, id], i) => {
@@ -180,7 +199,9 @@ const W = {
           });
           return body;
         });
-        for (let i = 0; i < panels.length; i += across) {
+        // one column: a box inside the card is just noise, so each panel is a ruled heading over its lines
+        if (across === 1) panels.forEach((body, i) => { const n = C.glance[i].title.toUpperCase(); rows.push([S(n + " ", HOT), S("─".repeat(Math.max(0, iw - n.length - 1)), DIM)], ...body, []); });
+        else for (let i = 0; i < panels.length; i += across) {
           const group = panels.slice(i, i + across), names = C.glance.slice(i, i + across).map((g) => g.title.toUpperCase());
           const h = Math.max(...group.map((b) => b.length)), line = [];
           names.forEach((n, j) => line.push(...(j ? [gap()] : []), S("┌ ", DIM), S(n, HOT), S(" " + "─".repeat(Math.max(0, pw - n.length - 4)) + "┐", DIM)));
@@ -193,7 +214,8 @@ const W = {
           rows.push(group.flatMap((_, j) => [...(j ? [gap()] : []), S("└" + "─".repeat(pw - 2) + "┘", DIM)]));
         }
         rows.push([], ...this.tl.render(iw, t));
-        rows.push([], [S(pad("status", 8), TXT), S(C.availability, HOT)], []);
+        const st = [], sc = []; wrapInto(st, sc, C.availability, HOT, iw - 8); st.push(sc);
+        rows.push([], ...st.map((r, i) => [S(pad(i ? "" : "status", 8), TXT), ...r]), []);
         rows.push(...flow([btn("projects", "who:projects", () => ask("show me your projects")), gap(),
           btn("stack", "who:stack", () => ask("what's your stack?")), gap(), btn("contact", "who:contact", () => ask("how can I reach you?"))], iw));
         return rows;
@@ -201,8 +223,18 @@ const W = {
     },
   }),
   projects: () => ({
-    onShow: () => openPeek(C.projects[0].id),
+    onShow: () => PHONE || openPeek(C.projects[0].id),
     render(cols) {
+      if (PHONE) {   // no hover and no room for a preview: each project is a two-line, full-width tap target
+        const rows = [];
+        C.projects.forEach((p) => {
+          const act = { key: "open:" + p.id, fn: () => ask(`tell me about ${p.title}`) }, yr = p.when || p.year, demo = p.live ? "● live" : "○ src";
+          rows.push([S(pad("▸ " + p.title, cols - yr.length - demo.length - 2), HOT, { act }), S(yr + "  ", DIM, { act }), S(demo, p.live ? HOT : TXT, { act })],
+            [S(pad("  " + p.kind, cols), DIM, { act })], []);
+        });
+        rows.push([S("tap a project to open it", DIM)]);
+        return rows;
+      }
       const tw = Math.max(...C.projects.map((p) => p.title.length)) + 2, ww = cols - tw - 22, what = ww >= 12;
       const rows = [[S(pad("   project", tw + 3), DIM), ...(what ? [S(pad("what", ww), DIM)] : []), S(pad("year", 12), DIM), S("demo", DIM)]];
       rows.push([S("─".repeat(Math.min(cols, tw + (what ? ww : 0) + 22)), DIM)]);
@@ -216,13 +248,13 @@ const W = {
     },
   }),
   project: (p) => ({
-    onShow: () => openView(p.id, "auto"),
+    onShow: () => PHONE || openView(p.id, "auto"),   // phones: the card's buttons open the viewer, so the answer stays in sight
     render(cols) {
       return box(p.id, (iw) => {
         const rows = [], cur = [];
         rows.push([S(p.title.toUpperCase(), HOT)], [S(`${p.kind} · ${p.when || p.year}`, DIM)], []);
         wrapInto(rows, cur, p.blurb, TXT, iw); rows.push(cur.splice(0), []);
-        wrapInto(rows, cur, tags(p, 10), DIM, iw); rows.push(cur.splice(0), []);
+        wrapInto(rows, cur, tags(p, PHONE ? 6 : 10), DIM, iw); rows.push(cur.splice(0), []);
         const bs = [];
         if (p.live) bs.push(btn(`▶ ${p.liveLabel || "live demo"}`, `v:${p.id}:live`, () => openView(p.id, "live")), gap());
         bs.push(btn("architecture", `v:${p.id}:arch`, () => openView(p.id, "arch")));
@@ -251,7 +283,7 @@ const W = {
         const act = { key: "g:" + g.key, fn: () => explain(g) };
         rows.push([S(pad(wideL ? g.label : g.short, labW), g.hot ? HOT : TXT, { act }), gap(), S("·".repeat(a), 0.22), S(" ".repeat(len), g.lane === "work" ? 0.95 : g.hot ? HOT : 0.75, { bar: g.lane === "work" ? "solid" : "hatch", act }), S("·".repeat(Math.max(0, T - a - len)), 0.22)]);
       });
-      return [...rows, [S(" ".repeat(labW + 1)), S(tick, DIM)], [], ...flow([S("■ work", 0.95), gap(2), S("▒ education", 0.75), gap(2), S("· click a bar for the full story", DIM)], cols)];
+      return [...rows, [S(" ".repeat(labW + 1)), S(tick, DIM)], [], ...flow([S("■ work", 0.95), gap(2), S("▒ education", 0.75), gap(2), S(`· ${TOUCH ? "tap" : "click"} a bar for the full story`, DIM)], cols)];
     },
   }),
   // one timeline bar, told properly: story on the left, what I did on the right (stacked when narrow)
@@ -287,7 +319,7 @@ const W = {
   cv: () => ({ render: () => [[btn("⇩ download cv.pdf", "cv", downloadCV), gap(2), btn("or see it as a timeline", "tl", () => ask("show me your career timeline"), TXT)]] }),
   help: () => ({
     render(cols) {
-      return box("help", (iw) => [["just ask", '"who are you?"  "what did you build?"  "tell me about BugSense"'], ["/projects", "all projects · /open <name|#> opens one"], ["/timeline", "work, studies and projects as a chart"], ["/stack", "tools and languages"], ["/contact", "email, github, linkedin, cv"], ["/clear", "clear · /theme green|amber|white|cyan · /reboot"], ["keys", "esc closes the viewer · ↑↓ history · enter skips typing · wheel scrolls"]]
+      return box("help", (iw) => [["just ask", '"who are you?"  "what did you build?"  "tell me about BugSense"'], ["/projects", "all projects · /open <name|#> opens one"], ["/timeline", "work, studies and projects as a chart"], ["/stack", "tools and languages"], ["/contact", "email, github, linkedin, cv"], ["/clear", "clear · /theme green|amber|white|cyan · /reboot"], (TOUCH ? ["touch", "tap any [button] · swipe to scroll · ← back closes the viewer"] : ["keys", "esc closes the viewer · ↑↓ history · enter skips typing · wheel scrolls"])]
         .flatMap(([k, v]) => { const rows = [], cur = [S(pad(k, 11), HOT)]; wrapInto(rows, cur, v, TXT, iw); rows.push(cur); return rows; }), cols, 96);
     },
   }),
@@ -306,9 +338,16 @@ function span(from, to) {   // "Aug 2023 – Mar 2024 · 8 mo"
 // ======================================================================
 // the right-hand viewer (a tmux split, drawn inside the CRT)
 // ======================================================================
-function openView(id, mode = "auto") { const p = P[id]; if (!p) return; if (mode === "auto") mode = p.live ? "live" : "arch"; pane = { kind: "project", id, mode, scroll: 0, born: performance.now() / 1000 }; }
+function openView(id, mode = "auto") {
+  const p = P[id]; if (!p) return; if (mode === "auto") mode = p.live ? "live" : "arch";
+  pane = { kind: "project", id, mode, scroll: 0, born: performance.now() / 1000 };
+  // on a phone the viewer is a full-screen sheet, so the system back gesture should close it, not leave the site
+  if (PHONE && !window.history.state?.sheet) window.history.pushState({ sheet: 1 }, "");
+}
 function openPeek(id) { pane = { kind: "peek", id, view: "preview", born: performance.now() / 1000 }; }
-function closePane() { pane = null; }
+function closePane() { pane = null; if (window.history.state?.sheet) window.history.back(); }
+addEventListener("popstate", () => { if (pane) pane = null; });
+if (window.history.state?.sheet) window.history.replaceState(null, "");   // a reload starts with the sheet closed
 // esc steps back out of the list's architecture view before it closes anything
 function escPane() { if (pane?.kind === "peek" && pane.view === "arch") pane.view = "preview"; else closePane(); }
 
@@ -337,14 +376,15 @@ function* offlineTwin(raw) {
   if (pid && !has(q, ["timeline", "career"])) {
     const p = P[pid];
     yield T(`${p.title}: ${p.kind.toLowerCase()}, ${(p.when || p.year).replace("—", "ongoing").trim()}. `);
-    yield T(p.live ? "I've put the live site on the right. It's real, you can click around in it." : "No public demo for this one, so the right side shows how it's put together.");
+    yield T(PHONE ? (p.live ? "The live site is one tap away below. It's real, you can click around in it." : "No public demo for this one, but the architecture below shows how it's put together.")
+      : p.live ? "I've put the live site on the right. It's real, you can click around in it." : "No public demo for this one, so the right side shows how it's put together.");
     yield X("open_project", { id: pid }); return;
   }
   if (has(q, ["timeline", "career", "experience", "history", "journey", "worked", " jobs", " job ", "employ", " path", "roadmap", "deneyim", "kariyer", "tecrübe", "background", "havelsan", "nextaim", "check24"])) {
     yield T("Here's my path so far, work and studies. Click any bar for the full story."); yield X("show_timeline"); return;
   }
   if (has(q, ["project", "built", " build", "portfolio", " demo", "work on", "side project", "proje", "neler yaptın", "show me what", "what have you made"])) {
-    yield T("Here's what I've built. The ● ones are live. Point at one to preview it on the right, click to open it."); yield X("show_projects"); return;
+    yield T(`Here's what I've built. The ● ones are live. ${PHONE ? "Tap one to open it." : "Point at one to preview it on the right, click to open it."}`); yield X("show_projects"); return;
   }
   if (has(q, ["who are you", "whoami", "who is", "about you", "yourself", "introduce", "kimsin", "kendini", "hakkında", "what do you do", "what are you", " you do "])) {
     yield T(`I'm ${C.name}, an AI & full-stack software engineer in Munich, finishing my M.Sc. at TUM with a thesis on BugSense. Here's the short version:`);
@@ -402,10 +442,10 @@ async function* remoteTwin(text) {
   }
   // the model sometimes writes a tool's name instead of calling it: run it anyway
   const typed = !tools.length && said.match(TOOL_TEXT);
-  if (typed) { tools.push({ name: typed[1], args: {} }); yield { type: "tool", name: typed[1], args: {} }; }
+  if (typed && typed[1] !== "open_project") { tools.push({ name: typed[1], args: {} }); yield { type: "tool", name: typed[1], args: {} }; }
   history.push({ role: "assistant", content: said.replace(TOOL_TEXT_ALL, "").trim(), tools });
 }
-const TOOL_TEXT = /\[?(?:showed:\s*)?\b(show_(?:whoami|projects|timeline|skills|contact|cv|help))\b\]?/;
+const TOOL_TEXT = /\[?(?:showed:\s*)?(?:functions\.)?\b(show_(?:whoami|projects|timeline|skills|contact|cv|help)|open_project)\b(?:\s*\([^)]*\))?\]?/;
 const TOOL_TEXT_ALL = new RegExp(TOOL_TEXT.source, "g");
 const useLLM = () => !!ENDPOINT && cfg.engine === "llm";
 
@@ -416,6 +456,7 @@ function setSuggestions(list) { suggestions = list || []; }
 async function ask(text) {
   text = text.trim(); if (!text) return;
   if (busy) { skip = true; while (busy) await sleep(16); }
+  if (PHONE && pane) closePane();   // the sheet covers the chat: a new question brings the chat back
   blocks.push(userBlock(text)); scroll = 0; setSuggestions([]);
   if (text.startsWith("/")) return slash(text);
   busy = true; skip = false;
@@ -455,7 +496,7 @@ function slash(cmd) {
 // ======================================================================
 const kbd = $("#kbd"), hist = []; let hIdx = -1;
 const focusKbd = () => kbd.focus({ preventScroll: true });
-kbd.addEventListener("input", () => (inputText = kbd.value));
+kbd.addEventListener("input", () => { inputText = kbd.value; typedAt = performance.now() / 1000; });
 kbd.addEventListener("keydown", (e) => {
   if (!kbd.value && blocks[blocks.length - 1] === menuBlock && MENU[+e.key - 1]) { e.preventDefault(); return ask(MENU[+e.key - 1][2]); }
   const peeking = pane?.kind === "peek" && !kbd.value;
@@ -468,7 +509,12 @@ kbd.addEventListener("keydown", (e) => {
   else if (e.key === "Escape") escPane();
   else if (e.key === "PageUp") scroll += 10; else if (e.key === "PageDown") scroll = Math.max(0, scroll - 10);
 });
-function submit() { const v = kbd.value; inputText = v; if (!v.trim()) { if (busy) skip = true; return; } kbd.value = inputText = ""; hist.unshift(v); hIdx = -1; ask(v); }
+function submit() {
+  const v = kbd.value; inputText = v; if (!v.trim()) { if (busy) skip = true; return; }
+  kbd.value = inputText = ""; hist.unshift(v); hIdx = -1;
+  if (PHONE) kbd.blur();   // drop the keyboard so the answer gets the whole screen
+  ask(v);
+}
 // mobile keyboards often send Enter as "Unidentified" (key 229), so the form's submit is the reliable path there
 $("#kbdForm").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
 addEventListener("keydown", (e) => {
@@ -481,8 +527,10 @@ addEventListener("keydown", (e) => {
 // text canvas (the "video memory") + layout
 // ======================================================================
 const tc = document.createElement("canvas"), tx = tc.getContext("2d");
-const cell = { w: 10, h: 20, fs: 20, x0: 0, y0: 0 }; let COLS = 80, ROWS = 24;
+const cell = { w: 10, h: 20, fs: 20, ty: 0, x0: 0, y0: 0 }; let COLS = 80, ROWS = 24;
 let VW = innerWidth, VH = innerHeight, VT = 0; // the visible viewport: shrinks when a phone keyboard opens
+// PHONE: a screen too small for the split view. The viewer becomes a full-screen sheet, opened by a tap, never by itself
+const TOUCH = matchMedia("(pointer: coarse)").matches, SCROLL = TOUCH ? "swipe" : "wheel"; let PHONE = false;
 function layoutText() {
   const scale = Math.min(devicePixelRatio, 2) * cfg.resolution;
   tc.width = Math.floor(VW * scale); tc.height = Math.floor(VH * scale);
@@ -490,14 +538,33 @@ function layoutText() {
   // phones: shrink the type so a line still holds ~46 characters (never below 15px)
   tx.font = `${100}px VT323, monospace`; const ratio = tx.measureText("M").width / 100;
   const fs = Math.min(cfg.fontSize * scale, Math.max(15 * scale, (tc.width - x0 * 2) / (46 * ratio))); tx.font = `${fs}px VT323, monospace`;
-  Object.assign(cell, { fs, w: tx.measureText("M").width, h: fs * 1.05, x0, y0: tc.height * margin + 6 * scale });
-  COLS = Math.floor((tc.width - cell.x0 * 2) / cell.w); ROWS = Math.floor((tc.height - cell.y0 * 2) / cell.h);
+  Object.assign(cell, { fs, w: tx.measureText("M").width, x0, y0: tc.height * margin + 6 * scale });
+  COLS = Math.floor((tc.width - cell.x0 * 2) / cell.w);
+  PHONE = COLS < 60 || (TOUCH && Math.min(VW, VH) < 500);
+  // phones get airier rows: easier to read and to hit with a thumb. Box and block glyphs are then drawn as
+  // shapes, so borders and the banner still join up across the taller rows
+  cell.h = fs * (PHONE ? 1.24 : 1.05); cell.ty = (cell.h - fs * 1.05) / 2;
+  ROWS = Math.floor((tc.height - cell.y0 * 2) / cell.h);
 }
-let hits = [], hoverKey = null, paneBox = null;
+let hits = [], hoverKey = null, paneBox = null, dock = null, typedAt = 0;
 const lum = (b) => { const v = Math.round(255 * b); return `rgb(${v},${v},${v})`; };
 // glyphs VT323 lacks (✉ …) come from a fallback font and can be wider than a cell; squeeze them into it
 const glyphW = new Map();
+// box lines as [left, right, up, down] arms, blocks as [top, bottom] fractions of the cell
+const BOX = { "─": [1, 1, 0, 0], "│": [0, 0, 1, 1], "┌": [0, 1, 0, 1], "┐": [1, 0, 0, 1], "└": [0, 1, 1, 0], "┘": [1, 0, 1, 0], "┼": [1, 1, 1, 1], "├": [0, 1, 1, 1], "┤": [1, 0, 1, 1] };
+const BLOCK = { "█": [0, 1], "▀": [0, 0.5], "▄": [0.5, 1] };
 function glyph(ch, x, y, w) {
+  if (cell.ty) {
+    const h = cell.h, k = BOX[ch], bl = BLOCK[ch];
+    if (bl) return tx.fillRect(x, y + h * bl[0], w + 0.5, h * (bl[1] - bl[0]) + 0.5);
+    if (k) {
+      const t = Math.max(1, Math.round(cell.fs * 0.07)), cx = Math.round(x + w / 2 - t / 2), cy = Math.round(y + h / 2 - t / 2);
+      if (k[0] || k[1]) tx.fillRect(k[0] ? x : cx, cy, (k[1] ? x + w : cx + t) - (k[0] ? x : cx), t);
+      if (k[2] || k[3]) tx.fillRect(cx, k[2] ? y : cy, t, (k[3] ? y + h : cy + t) - (k[2] ? y : cy));
+      return;
+    }
+    y += cell.ty;
+  }
   const key = ch + tx.font; let gw = glyphW.get(key); if (gw === undefined) glyphW.set(key, (gw = tx.measureText(ch).width));
   if (gw <= w * 1.02) return tx.fillText(ch, x, y);
   tx.save(); tx.translate(x, y); tx.scale(w / gw, 1); tx.fillText(ch, 0, 0); tx.restore();
@@ -527,7 +594,7 @@ function drawPane(px, py, pw, ph, t) {
   // px,py in cells; pw,ph in cells
   const { w, h, x0, y0 } = cell, X = x0 + px * w, Y = y0 + py * h, Wd = pw * w, Ht = ph * h;
   // vertical divider, stopping short of the separator row so it doesn't cross the ┄ line
-  tx.fillStyle = lum(DIM); tx.fillRect(X - w * 0.6, Y, Math.max(1, w * 0.12), Ht);
+  if (px > 0) { tx.fillStyle = lum(DIM); tx.fillRect(X - w * 0.6, Y, Math.max(1, w * 0.12), Ht); }
   let live = null;
   paneBox = { x: X, y: Y, w: Wd, h: Ht };
   if (pane.kind === "peek") {
@@ -566,6 +633,28 @@ function drawPane(px, py, pw, ph, t) {
     return live;
   }
   const p = P[pane.id], modes = [p.live && "live", "arch"].filter(Boolean);
+  if (PHONE) {
+    // a full-screen sheet: back on the left where the thumb expects it, the title, then the views as tabs
+    const ext = btn("open ↗", "pane:ext", () => window.open(p.live || p.link, "_blank", "noopener"), TXT);
+    drawRow([btn("← back", "pane:x", closePane, HOT)], px, py, pw - ext.t.length - 1);
+    if (p.live || p.link) drawRow([ext], px + pw - ext.t.length, py, ext.t.length);
+    drawRow([S("─".repeat(pw), DIM)], px, py + 1, pw);
+    drawRow([S(p.title.toUpperCase(), HOT), S("  " + (p.when || p.year), DIM)], px, py + 2, pw);
+    const tabs = [];
+    modes.forEach((m) => tabs.push(S(` ${m === "live" ? "▶ " + (p.liveLabel || "live demo") : "architecture"} `, pane.mode === m ? 1 : TXT, { inv: pane.mode === m, act: { key: "pane:" + m, fn: () => { pane.mode = m; pane.scroll = 0; } } }), gap(2)));
+    drawRow(tabs, px, py + 3, pw);
+    const by = py + 5, bh = ph - 5;
+    paneBox = { x: X, y: y0 + by * h, w: Wd, h: bh * h };
+    if (pane.mode === "live") {
+      drawRow([S("connecting to " + new URL(p.live).host + " …", DIM)], px, by, pw);
+      live = { x: X, y: y0 + by * h, w: Wd, h: bh * h, src: p.live };
+    } else {
+      const rows = archRows(p, pw);
+      if (p.link) rows.push([btn("source on github ↗", "pane:gh", () => window.open(p.link, "_blank", "noopener"))], []);
+      scrollRows(rows, px, by, pw, bh);
+    }
+    return live;
+  }
   const head = [S(` ${p.id} `, 1, { inv: true }), gap()];
   modes.forEach((m) => head.push(btn(m, "pane:" + m, () => (pane.mode = m), pane.mode === m ? HOT : DIM), gap()));
   drawRow(head, px, py, pw);
@@ -587,7 +676,7 @@ function scrollRows(rows, px, by, pw, bh) {
   const room = rows.length > bh ? bh - 1 : bh, max = Math.max(0, rows.length - room);
   pane.scroll = Math.max(0, Math.min(pane.scroll || 0, max));
   rows.slice(pane.scroll, pane.scroll + room).forEach((r, k) => drawRow(r, px, by + k, pw));
-  if (max) drawRow([S(pane.scroll < max ? `↓ ${max - pane.scroll} more · wheel` : `↑ ${max} more · wheel`, 0.4)], px, by + room, pw);
+  if (max) drawRow([S(pane.scroll < max ? `↓ ${max - pane.scroll} more · ${SCROLL}` : `↑ ${max} more · ${SCROLL}`, 0.4)], px, by + room, pw);
 }
 // the architecture view: overview, data flow, components, decisions, stack
 function archRows(p, cols) {
@@ -620,10 +709,21 @@ function drawScreen(t) {
   if (cur.length) sugRows.push(cur);
   // reserve room for the tallest follow-up list, so suggestions coming and going never resize the log
   // phones skip that and let the prompt follow the text like a real terminal, instead of sitting under an empty screen
-  const compact = COLS < 60;
+  const compact = PHONE;
+  if (PHONE && pane?.kind === "peek") pane = null;   // the list's hover preview has no place on a phone (e.g. after a rotate)
+  if (PHONE && pane) {
+    // the viewer is a sheet over the whole tube; the chat waits underneath, unchanged
+    dock = null;
+    const shown = cfg.lps >= 400 ? ROWS + 1 : Math.floor((t - pane.born) * cfg.lps * 1.5), clipY = cell.y0 + shown * cell.h;
+    tx.save(); tx.beginPath(); tx.rect(0, 0, tc.width, clipY); tx.clip();
+    const live = drawPane(0, 0, COLS, ROWS, t);
+    tx.restore();
+    if (live) live.reveal = Math.max(0, Math.min(1, (clipY - live.y) / live.h));
+    return live;
+  }
   const sugH = compact ? sugRows.length : Math.max(sugRows.length, ...Object.values(FOLLOW).map((l) => fitRows(l.map((q) => `[${q}] `))));
   while (sugRows.length < sugH) sugRows.unshift([]);
-  const split = pane && COLS >= 60, share = pane?.kind === "peek" ? (COLS >= 110 ? 0.64 : 0.58) : (COLS >= 110 ? 0.42 : 0.38);
+  const split = pane && !PHONE, share = pane?.kind === "peek" ? (COLS >= 110 ? 0.64 : 0.58) : (COLS >= 110 ? 0.42 : 0.38);
   const leftCols = split ? Math.floor(COLS * share) : COLS;
   const lc = pane && !split ? 0 : leftCols;
   const all = []; if (lc > 0) blocks.forEach((b) => { const r = b.render(lc, t); b.rows = r.length; all.push(...(b.revealed ? r : r.slice(0, Math.floor(b.rev || 0)))); });
@@ -634,7 +734,7 @@ function drawScreen(t) {
     const maxScroll = Math.max(0, all.length - logRows); scroll = Math.min(scroll, maxScroll);
     const start = Math.max(0, all.length - logRows - scroll);
     all.slice(start, start + logRows).forEach((r, i) => drawRow(r, 0, i, lc));
-    if (maxScroll > 0) scrollHint = scroll ? ` ↑ ${start} more · ↓ ${scroll} ` : ` ↑ ${start} more · wheel `;
+    if (maxScroll > 0) scrollHint = scroll ? ` ↑ ${start} more · ↓ ${scroll} ` : ` ↑ ${start} more · ${SCROLL} `;
   }
   let live = null;
   if (pane) {
@@ -647,11 +747,18 @@ function drawScreen(t) {
   // separator + suggestions + prompt
   drawRow([S("┄".repeat(Math.max(0, COLS - scrollHint.length)), 0.22), S(scrollHint, 0.4)], 0, sepR, COLS);
   sugRows.forEach((r, i) => drawRow(r, 0, sugTop + i, COLS));
-  const ps = "> ", room = COLS - ps.length - 2, shown = inputText.length > room ? "…" + inputText.slice(-room + 1) : inputText;
-  const caret = Math.floor(t * 2.2) % 2 === 0;
-  drawRow([S(ps, HOT), S(shown, HOT), S(" ", HOT, { inv: caret })], 0, promptR, COLS);
+  // the caret sits where the input's own caret is, so editing mid-line (or a tap-placed caret on a phone) shows true
+  const ps = "> ", room = COLS - ps.length - 2, focused = document.activeElement === kbd, n = inputText.length;
+  const sel = focused ? Math.min(kbd.selectionStart ?? n, n) : n, off = n >= room ? Math.min(Math.max(0, sel - room + 1), n - room + 1) : 0;
+  let shown = inputText.slice(off, off + room); if (off > 0) shown = "…" + shown.slice(1);
+  const cc = sel - off, caret = Math.floor(t * 2.2) % 2 === 0 || t - typedAt < 0.5;
+  if (PHONE && !focused && !n) drawRow([S(ps, HOT), S(" ", HOT, { inv: caret }), S(" tap to type…", DIM)], 0, promptR, COLS);
+  else drawRow([S(ps, HOT), S(shown.slice(0, cc), HOT), S(shown[cc] || " ", HOT, { inv: caret && (focused || !PHONE) }), S(shown.slice(cc + 1), HOT)], 0, promptR, COLS);
   const legal = [S("impressum", 0.3, { act: LEGAL[0] }), S(" · ", 0.3), S("privacy", 0.3, { act: LEGAL[1] })];
-  if (COLS - rowLen(legal) > ps.length + shown.length + 4) drawRow(legal, COLS - rowLen(legal), promptR, rowLen(legal));
+  const legalOn = COLS - rowLen(legal) > ps.length + Math.max(shown.length + 1, PHONE && !n ? 14 : 0) + 3;
+  if (legalOn) drawRow(legal, COLS - rowLen(legal), promptR, rowLen(legal));
+  // phones: the real input covers the prompt row and everything under it (stopping short of the legal links)
+  dock = PHONE ? { x: 0, y: cell.y0 + promptR * cell.h, r: cell.x0 + (legalOn ? COLS - rowLen(legal) - 1 : COLS) * cell.w, b: tc.height } : null;
   return live;
 }
 
@@ -663,7 +770,9 @@ const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: fa
 const VS = `attribute vec2 p; varying vec2 uv; void main(){ uv = p*.5+.5; gl_Position = vec4(p,0.,1.); }`;
 const FS_PERSIST = `precision mediump float; varying vec2 uv; uniform sampler2D cur, prev; uniform float decay;
 void main(){ vec3 c = texture2D(cur, vec2(uv.x,1.-uv.y)).rgb; vec3 p = texture2D(prev, uv).rgb * decay; gl_FragColor = vec4(max(c,p),1.); }`;
-const FS_CRT = `precision highp float; varying vec2 uv;
+// phones: half the bloom taps; the glow looks the same at that pixel density and the GPU (and battery) gets a break
+const FS_CRT = `#define TAPS ${TOUCH ? 6 : 12}
+precision highp float; varying vec2 uv;
 uniform sampler2D tex; uniform vec2 res; uniform float time, curve, scan, mask, bloom, aberr, noise, flicker, vignette, power, jitter, glow;
 uniform vec3 tint; uniform vec4 area;
 float rand(vec2 c){ return fract(sin(dot(c, vec2(12.9898,78.233))) * 43758.5453); }
@@ -696,9 +805,9 @@ void main(){
   float a = aberr * px.x * 2.;
   vec3 col = vec3(samp(u+vec2(a,0.)).r, samp(u).g, samp(u-vec2(a,0.)).b);
   vec3 b = vec3(0.);
-  for(int i=0;i<12;i++){ float ang = float(i)*.5236; vec2 d = vec2(cos(ang), sin(ang));
+  for(int i=0;i<TAPS;i++){ float ang = float(i)*6.2832/float(TAPS); vec2 d = vec2(cos(ang), sin(ang));
     b += samp(u + d*px*3.*glow); b += samp(u + d*px*7.*glow)*.6; }
-  col += b/19.2 * bloom;
+  col += b/(float(TAPS)*1.6) * bloom;
   float l = dot(col, vec3(.333));
   vec3 c = tint * l + pow(l, 3.) * vec3(.35);
   float sl = .5 + .5*sin(u.y*res.y*3.14159*.5);
@@ -731,10 +840,15 @@ function makeFB() {
 }
 function bindQuad(p) { const loc = gl.getAttribLocation(p, "p"); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0); }
 function hex(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; }
+let sized = "";
 function resize() {
   const s = Math.min(devicePixelRatio, 2);
   const vv = visualViewport; VW = vv ? vv.width : innerWidth; VH = vv ? vv.height : innerHeight; VT = vv ? vv.offsetTop : 0;
   Object.assign(canvas.style, { top: VT + "px", height: VH + "px" });
+  // a phone keyboard fires a stream of viewport events, most of them only scrolls: rebuilding the
+  // buffers for those would blank the tube and drop its afterglow, so only a real size change does
+  const key = [VW, VH, s].join();
+  if (key === sized) return; sized = key;
   layoutText();
   canvas.width = VW * s; canvas.height = VH * s;
   makeFB();
@@ -764,13 +878,39 @@ function placeLive(r) {
   liveEl.classList.add("on");
 }
 
+// phones: lay the real input over the drawn prompt (see drawScreen), with type that matches the cells
+// so a tap lands the caret on the character under the finger
+let dockKey = "";
+function placeDock() {
+  const d = dock, key = d ? [d.x, d.y, d.r, d.b, cell.w, VT].map(Math.round).join() : "";
+  if (key === dockKey) return; dockKey = key;
+  if (!d) { kbd.classList.remove("dock"); kbd.removeAttribute("style"); if (PHONE && pane) kbd.blur(); return; }
+  const [L, T] = texToScreen(d.x, d.y), [R, B] = texToScreen(d.r, d.b), k = VH / tc.height, cw = cell.w * k;
+  const fpx = Math.max(16, cell.fs * k);   // under 16px iOS zooms the page on focus
+  tx.font = `${fpx}px VT323, monospace`; const adv = tx.measureText("M").width;
+  kbd.classList.add("dock");
+  Object.assign(kbd.style, { left: L + "px", top: T + "px", width: Math.max(40, R - L) + "px", height: Math.max(cell.h * k, B - T) + "px",
+    padding: `0 0 ${Math.max(0, B - T - cell.h * k)}px ${cell.x0 * k + 2 * cw}px`, fontSize: fpx + "px", lineHeight: cell.h * k + "px", letterSpacing: cw - adv + "px" });
+}
+
 // pointer: hover + click through the curve
 let pointer = null;
-canvas.addEventListener("pointermove", (e) => { pointer = [e.clientX, e.clientY]; });
+// a fingertip is wider than a cell: on touch, a tap that lands just beside a target still counts, nearest one wins
+function hitAt(cx, cy, touch) {
+  const [x, y] = screenToTex(cx, cy), exact = hits.find((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+  if (exact || !touch) return exact;
+  const tol = cell.h * 0.55; let best = null, bd = tol;
+  for (const r of hits) { const d = Math.hypot(Math.max(r.x - x, 0, x - r.x - r.w), Math.max(r.y - y, 0, y - r.y - r.h)); if (d < bd) { bd = d; best = r; } }
+  return best;
+}
+canvas.addEventListener("pointermove", (e) => { if (e.pointerType !== "touch") pointer = [e.clientX, e.clientY]; });
 canvas.addEventListener("pointerleave", () => (pointer = null));
 canvas.addEventListener("click", (e) => {
-  const [x, y] = screenToTex(e.clientX, e.clientY), h = hits.find((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
-  if (h) h.act.fn(); focusKbd();
+  if (performance.now() - dragEnd < 80) return;   // the end of a swipe is not a tap
+  const touch = TOUCH || e.pointerType === "touch", h = hitAt(e.clientX, e.clientY, touch);
+  if (h) h.act.fn();
+  if (!PHONE) focusKbd();       // desktop: typing anywhere goes to the prompt
+  else if (!h) kbd.blur();      // phones: a tap on empty screen puts the keyboard away; the prompt row itself is the real input
 });
 // accumulate wheel delta so trackpads (many small events) don't race; ~1 row per 40px, 1 row per wheel line
 let wheelAcc = 0;
@@ -783,9 +923,36 @@ canvas.addEventListener("wheel", (e) => {
   if ((pane?.kind === "project" || pane?.view === "arch") && b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) pane.scroll = (pane.scroll || 0) + rows;
   else scroll = Math.max(0, scroll - rows);
 }, { passive: true });
-let touchY = null;
-canvas.addEventListener("touchstart", (e) => (touchY = e.touches[0].clientY), { passive: true });
-canvas.addEventListener("touchmove", (e) => { const d = e.touches[0].clientY - touchY; if (Math.abs(d) > 18) { scroll = Math.max(0, scroll + Math.sign(d)); touchY = e.touches[0].clientY; } }, { passive: true });
+// touch: the content follows the finger row by row and keeps gliding after a flick; a press lights its target up
+let drag = null, fling = null, dragEnd = 0;
+const rowPx = () => cell.h * VH / tc.height;   // one text row in CSS pixels
+function scrollRowsBy(target, rows) {   // rows > 0: further down the content
+  if (target === "pane") { if (pane) pane.scroll = Math.max(0, (pane.scroll || 0) + rows); }
+  else scroll = Math.max(0, scroll - rows);
+}
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.pointerType !== "touch") return;
+  const [x, y] = screenToTex(e.clientX, e.clientY), b = paneBox;
+  const inPane = pane && b && (PHONE || pane.kind === "project" || pane.view === "arch") && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  drag = { id: e.pointerId, y0: e.clientY, y: e.clientY, t: e.timeStamp, acc: 0, v: 0, moved: false, target: inPane ? "pane" : "log" };
+  fling = null; hoverKey = hitAt(e.clientX, e.clientY, true)?.act.key ?? null;
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const dy = e.clientY - drag.y, dt = Math.max(1, e.timeStamp - drag.t);
+  if (!drag.moved && Math.abs(e.clientY - drag.y0) > 8) { drag.moved = true; hoverKey = null; }
+  if (!drag.moved) return;
+  drag.v = drag.v * 0.6 + (-dy / rowPx() / (dt / 1000)) * 0.4;   // rows per second, smoothed
+  drag.acc += -dy / rowPx(); drag.y = e.clientY; drag.t = e.timeStamp;
+  const rows = Math.trunc(drag.acc); if (rows) { drag.acc -= rows; scrollRowsBy(drag.target, rows); }
+});
+function endDrag(e) {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (drag.moved) { dragEnd = performance.now(); if (e.timeStamp - drag.t < 80 && Math.abs(drag.v) > 4) fling = { target: drag.target, v: drag.v, acc: drag.acc }; }
+  drag = null; setTimeout(() => { if (!drag) hoverKey = null; }, 140);
+}
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
 
 // ======================================================================
 // frame loop
@@ -803,9 +970,14 @@ function frame(now) {
     b.tick?.(dt);
     if (!b.tick || b.done) b.revealed = true; else break;
   }
+  if (fling) {
+    fling.acc += fling.v * dt; fling.v *= Math.exp(-dt * 3.2);
+    const rows = Math.trunc(fling.acc); if (rows) { fling.acc -= rows; scrollRowsBy(fling.target, rows); }
+    if (Math.abs(fling.v) < 3) fling = null;
+  }
   if (pointer) { const [x, y] = screenToTex(...pointer); const h = hits.find((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h); hoverKey = h ? h.act.key : null; canvas.classList.toggle("link", !!h); }
   const live = drawScreen(t);
-  placeLive(live);
+  placeLive(live); placeDock();
   gl.bindTexture(gl.TEXTURE_2D, textTex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tc);
   gl.useProgram(pPersist); bindQuad(pPersist);
@@ -833,7 +1005,7 @@ function frame(now) {
 // boot
 // ======================================================================
 async function boot() {
-  busy = true; skip = false; blocks.length = 0; setSuggestions([]); closePane(); powerT = 0;
+  busy = true; skip = false; blocks.length = 0; setSuggestions([]); pane = null; powerT = 0;
   const out = async (s, b = 0.55) => blocks.push(lineBlock([[S(s, b)]]));   // already on the tube; the halo reveals it
   const hi = [
     "██   ██ ██",
@@ -862,7 +1034,7 @@ async function boot() {
     : "This terminal is my digital twin, a scripted bot that knows my work, my projects and my career and answers as me. Type a question, or pick one to start:"));
   blocks.push(lineBlock([[]]), menuBlock);
   busy = false;
-  focusKbd();
+  if (!TOUCH) focusKbd();   // a phone keyboard should come up when asked for, not over the welcome screen
 }
 
 // a11y / crawler mirror of everything the screen can show

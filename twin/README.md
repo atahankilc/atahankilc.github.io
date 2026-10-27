@@ -27,10 +27,10 @@ The page is public and an Origin header can be faked with curl, so nothing here 
 2. **Burst limit per IP**: 6 requests / 60 s via the Cloudflare rate-limit binding `BURST`.
 3. **Request shape**: body ≤ 16 KB, ≤ 12 messages × 600 chars, last message must be the visitor's.
 4. **Daily caps** in the `Budget` Durable Object: 1,500 OpenAI calls per day in total, 40 per visitor (hashed IP, wiped daily). Over the cap the page answers with the offline engine.
-5. **Cheap, short answers**: `gpt-5-nano` with minimal reasoning, max 400 output tokens.
+5. **Small model, short answers**: `gpt-5-mini` with low reasoning. A turn that shows a widget takes two calls (pick the widget, then write around it).
 6. **OpenAI side (do this yourself)**: a separate project for the twin, a key restricted to that project, prepaid credits with auto-recharge off, and a project budget.
 
-Worst case at the caps is roughly 1,500 × ~$0.0004 ≈ $0.60 a day.
+Worst case at the caps is roughly 1,500 × ~$0.004 ≈ $6 a day; lower `DAILY_LIMIT` or switch `MODEL` back to `gpt-5-nano` to cut it.
 
 - The system prompt allows only questions about Atahan and only facts from `profile.json`. Everything else gets a one-line refusal.
 - `open_project` ids are validated against the profile before they reach the page.
