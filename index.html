@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Atahan Kılıç — digital twin</title>
+<meta name="description" content="Talk to the digital twin of Atahan Kılıç, an AI & full-stack software engineer in Munich. Ask about projects, experience and how to reach him.">
+<link href="assets/fonts/vt323.css" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#050505;overflow:hidden}
+  canvas#crt{position:fixed;inset:0;width:100vw;height:100vh;display:block;cursor:text;touch-action:pan-y}
+  canvas#crt.link{cursor:pointer}
+  #kbd{position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px}
+  /* the one thing that can't live inside the shader: a live, interactive website */
+  #live{position:fixed;display:none;z-index:3;background:#000}
+  #live.on{display:block}
+  #live iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
+  #live .tint{position:absolute;inset:0;pointer-events:none;mix-blend-mode:color}
+  #live .lines{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(to bottom,transparent 0 2px,rgba(0,0,0,.28) 2px 3px)}
+  #live .edge{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 40px rgba(0,0,0,.8)}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<canvas id="crt" aria-hidden="true"></canvas>
+<input id="kbd" autocapitalize="off" autocomplete="off" spellcheck="false" enterkeyhint="send" aria-label="Ask Atahan's digital twin">
+<div id="live"><iframe title="live demo" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" referrerpolicy="no-referrer"></iframe><div class="tint"></div><div class="lines"></div><div class="edge"></div></div>
+<main class="sr" id="sr"></main>
+<div class="sr" id="said" aria-live="polite"></div>
+<script src="assets/content.js"></script>
+<script src="twin/twin.config.js"></script>
+<script>
+const C = window.CONTENT;
+const PHOSPHORS = { green: "#5dff8f", amber: "#ffb43a", white: "#e8f0ff", cyan: "#62f3ff", magenta: "#ff5ad1" };
+const CV = "assets/cv.pdf";
+const $ = (s) => document.querySelector(s);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ======================================================================
+// knowledge — the only things the twin may talk about
+// ======================================================================
+const P = Object.fromEntries(C.projects.map((p) => [p.id, p]));
+// every bar opens its full story (C.roles[key]); the thesis sits under TUM, project diamonds are gone
+const GANTT = [
+  { key: "metu", label: "METU · B.Sc. CE", short: "METU", lane: "edu", from: "2018-09", to: "2023-07" },
+  { key: "havelsanCand", label: "HAVELSAN · cand.", short: "HAVELSAN", lane: "work", from: "2021-11", to: "2023-07" },
+  { key: "havelsanDev", label: "HAVELSAN · dev", short: "↳ developer", lane: "work", from: "2023-08", to: "2024-03" },
+  { key: "tum", label: "TUM · M.Sc.", short: "TUM", lane: "edu", from: "2024-04", to: "now" },
+  { key: "thesis", label: "↳ BugSense", short: "↳ thesis", lane: "edu", from: "2026-04", to: "now", hot: true },
+  { key: "nextaim", label: "NextAim", short: "NextAim", lane: "work", from: "2024-09", to: "2026-03" },
+  { key: "check24", label: "CHECK24", short: "CHECK24", lane: "work", from: "2026-07", to: "now" },
+];
+const ALIASES = {
+  harmos: ["harmos", " cad"], bugsense: ["bugsense", "bug sense", " uti", "thesis", " tez", "medical", "diagnos"],
+  steward: ["steward", "talk to your building", "your building", "synera", "indoor", "navigation", "industrial agents"], sharksight: ["sharksight", "shark", " bmw"],
+  northstar: ["north star", "northstar", "ideation"], router: ["routemaxx", "router", "routing", "tum.ai", "slop"],
+  tate: [" tate", "teacher", "öğretmen"],
+};
+
+// ======================================================================
+// screen model — everything is drawn into a character grid that goes
+// through the CRT shader. A row is a list of segments:
+//   { t, b }            text at brightness b (0..1)
+//   { t, b, act }       clickable (act = { key, fn }) — inverts on hover
+//   { t, b, inv }       inverted (filled cell, dark text)
+//   { t, b, bar }       filled cells ("solid" | "hatch") — glyph-free bars
+// ======================================================================
+const S = (t, b = 0.82, o = {}) => ({ t: String(t), b, ...o });
+const DIM = 0.48, TXT = 0.82, HOT = 1;
+const blocks = [];          // everything in the conversation log
+let scroll = 0;             // rows scrolled up from the bottom
+let suggestions = [];
+let pane = null;            // { kind: "peek", id } | { kind: "project", id, mode, scroll }
+let inputText = "", busy = false, skip = false, powerT = 0;
+
+function wrapInto(rows, cur, text, b, cols) {
+  // append text to the current row, wrapping on word boundaries
+  const width = () => cur.reduce((n, s) => n + s.t.length, 0);
+  for (const para of text.split(/(\n)/)) {
+    if (para === "\n") { rows.push(cur.splice(0)); continue; }
+    for (const w of para.split(/([ \t]+)/)) {   // not \s: a no-break space (NB) must hold
+      if (!w) continue;
+      if (width() + w.length > cols && width() > 0) { rows.push(cur.splice(0)); if (/^[ \t]+$/.test(w)) continue; }
+      if (w.length > cols) { for (let i = 0; i < w.length; i += cols) { if (width() > 0) rows.push(cur.splice(0)); cur.push(S(w.slice(i, i + cols), b)); } continue; }
+      cur.push(S(w, b));
+    }
+  }
+}
+const lineBlock = (rows) => ({ render: () => rows });
+function textBlock(text, b = TXT) { return { render(cols) { const rows = [], cur = []; wrapInto(rows, cur, text, b, cols); rows.push(cur); return rows; } }; }
+function userBlock(text) {
+  return { render(cols) { const rows = [], cur = [S("> ", DIM)]; wrapInto(rows, cur, text, HOT, cols); rows.push(cur, []); return rows; } };
+}
+// a twin turn: text deltas and widgets, revealed in order like a teletype
+function twinBlock() {
+  const m = {
+    parts: [], idx: 0, shown: 0, wait: 0, closed: false, done: false, onDone: null,
+    text(s) { const last = m.parts[m.parts.length - 1]; if (last && last.kind === "text" && m.parts.indexOf(last) >= m.idx) last.s += s; else m.parts.push({ kind: "text", s }); },
+    widget(w) { if (w) m.parts.push({ kind: "widget", w }); },
+    tick(dt) {
+      if (m.done) return;
+      while (m.idx < m.parts.length) {
+        const p = m.parts[m.idx];
+        if (p.kind === "text") {
+          if (skip || cfg.cps >= 2000) m.shown = p.s.length; else m.shown += cfg.cps * dt;
+          if (m.shown < p.s.length) return;
+          if (m.idx === m.parts.length - 1 && !m.closed) return;   // more text may still stream in
+          m.idx++; m.shown = 0;
+        } else {
+          if (!p.shownAt) { p.shownAt = performance.now(); p.w.onShow?.(); p.w.born = performance.now() / 1000; }
+          if (!skip && performance.now() - p.shownAt < 160) return;
+          m.idx++;
+        }
+      }
+      if (m.closed) { m.done = true; m.onDone?.(); }
+    },
+    render(cols, t) {
+      const rows = [], cur = [S("atahan › ", DIM)];
+      for (let i = 0; i <= Math.min(m.idx, m.parts.length - 1); i++) {
+        const p = m.parts[i];
+        if (p.kind === "text") wrapInto(rows, cur, i < m.idx ? p.s : p.s.slice(0, Math.floor(m.shown)), TXT, cols);
+        else if (i < m.idx || p.shownAt) { if (cur.length) rows.push(cur.splice(0)); rows.push(...p.w.render(cols, t)); }
+      }
+      // the caret blinks by inverting, never by appearing/disappearing, and an empty caret row
+      // takes the place of the trailing spacer, so the row count never changes and the log can't bob
+      const caret = m.done ? [] : [S(" ", HOT, { inv: Math.floor(t * 2.2) % 2 === 0 })];
+      if (cur.length) rows.push([...cur, ...caret], []); else rows.push(caret);
+      return rows;
+    },
+  };
+  blocks.push(m); scroll = 0;
+  return m;
+}
+
+// ======================================================================
+// widgets — the GUI inside the terminal
+// ======================================================================
+const pad = (s, n) => { s = String(s); return s.length >= n ? s.slice(0, Math.max(0, n - 1)) + (n > 0 ? "…" : "") : s + " ".repeat(n - s.length); };
+function box(title, inner, cols, maxW = 96) {
+  // inner(innerCols) -> rows; wraps them in ┌─ title ─┐ … └──┘
+  const W = Math.min(cols, maxW), iw = W - 4, rows = inner(iw);
+  const top = "┌─ " + title + " " + "─".repeat(Math.max(0, W - title.length - 5)) + "┐";
+  const out = [[S(top, DIM)]];
+  rows.forEach((r) => { r = clip(r, iw); out.push([S("│ ", DIM), ...r, S(" ".repeat(Math.max(0, iw - rowLen(r))) + " │", DIM)]); });
+  out.push([S("└" + "─".repeat(W - 2) + "┘", DIM)]);
+  return out;
+}
+const rowLen = (r) => r.reduce((n, s) => n + s.t.length, 0);
+function clip(r, n) { const out = []; for (const s of r) { const room = n - rowLen(out); if (room <= 0) break; out.push(s.t.length > room ? { ...s, t: s.t.slice(0, room) } : s); } return out; }
+function flow(segs, cols) {
+  // wrap whole segments (buttons, tags) onto new rows instead of cutting them
+  const rows = [[]];
+  for (const s of segs) { const r = rows[rows.length - 1]; if (rowLen(r) + s.t.length > cols && rowLen(r) > 0) { if (!s.t.trim()) continue; rows.push([s]); } else r.push(s); }
+  return rows;
+}
+const NB = (s) => s.replace(/ /g, "\u00a0");
+// a project's stack as [tags]; short views show the first n and point to the architecture view for the rest
+const tags = (p, n = Infinity) => p.stack.slice(0, n).map((s) => NB(`[${s}]`)).join(" ") + (p.stack.length > n ? `  +${p.stack.length - n} more in architecture` : "");   // keep "[B-Rep kernel]" or "──▶ [ Engine ]" on one line
+const btn = (label, key, fn, b = HOT) => S(`[${label}]`, b, { act: { key, fn } });
+const gap = (n = 1) => S(" ".repeat(n), TXT);
+
+const W = {
+  whoami: () => ({
+    tl: null,
+    render(cols, t) {
+      if (!this.tl) this.tl = W.timeline();
+      this.tl.born = this.born;
+      return box("atahan@munich", (iw) => {
+        const rows = [...flow([S(NB(C.name.toUpperCase()), HOT), gap(3), S(NB(`${C.role} · ${C.location}`), TXT)], iw)], cur = [];
+        wrapInto(rows, cur, `"${C.tagline}"`, DIM, iw); rows.push(cur.splice(0), []);
+        // three panels side by side; stacked full width when the screen is narrow
+        const across = iw >= 60 ? 3 : 1, pw = Math.floor((iw - (across - 1)) / across), cw = pw - 4;
+        const panels = C.glance.map((g) => {
+          const body = [];
+          g.items.forEach(([head, sub, id], i) => {
+            const act = id && P[id] ? { act: { key: "who:" + id, fn: () => ask(`tell me about ${P[id].title}`) } } : {};
+            if (i) body.push([]);
+            body.push([S(pad(head + (id ? " ›" : ""), cw), HOT, act)]);
+            const r = [], c = []; wrapInto(r, c, sub, TXT, cw); r.push(c); body.push(...r);
+          });
+          return body;
+        });
+        for (let i = 0; i < panels.length; i += across) {
+          const group = panels.slice(i, i + across), names = C.glance.slice(i, i + across).map((g) => g.title.toUpperCase());
+          const h = Math.max(...group.map((b) => b.length)), line = [];
+          names.forEach((n, j) => line.push(...(j ? [gap()] : []), S("┌ ", DIM), S(n, HOT), S(" " + "─".repeat(Math.max(0, pw - n.length - 4)) + "┐", DIM)));
+          rows.push(line);
+          for (let y = 0; y < h; y++) {
+            const r = [];
+            group.forEach((b, j) => { const c = clip(b[y] || [], cw); r.push(...(j ? [gap()] : []), S("│ ", DIM), ...c, S(" ".repeat(cw - rowLen(c)) + " │", DIM)); });
+            rows.push(r);
+          }
+          rows.push(group.flatMap((_, j) => [...(j ? [gap()] : []), S("└" + "─".repeat(pw - 2) + "┘", DIM)]));
+        }
+        rows.push([], ...this.tl.render(iw, t));
+        rows.push([], [S(pad("status", 8), TXT), S(C.availability, HOT)], []);
+        rows.push(...flow([btn("projects", "who:projects", () => ask("show me your projects")), gap(),
+          btn("stack", "who:stack", () => ask("what's your stack?")), gap(), btn("contact", "who:contact", () => ask("how can I reach you?"))], iw));
+        return rows;
+      }, cols, cols);   // the card spans the whole log, like the timeline
+    },
+  }),
+  projects: () => ({
+    onShow: () => openPeek(C.projects[0].id),
+    render(cols) {
+      const tw = Math.max(...C.projects.map((p) => p.title.length)) + 2, ww = cols - tw - 22, what = ww >= 12;
+      const rows = [[S(pad("   project", tw + 3), DIM), ...(what ? [S(pad("what", ww), DIM)] : []), S(pad("year", 12), DIM), S("demo", DIM)]];
+      rows.push([S("─".repeat(Math.min(cols, tw + (what ? ww : 0) + 22)), DIM)]);
+      C.projects.forEach((p) => {
+        const act = { key: "open:" + p.id, fn: () => ask(`tell me about ${p.title}`) }, sel = pane?.kind === "peek" && pane.id === p.id;
+        rows.push([S(sel ? " ▸ " : "   ", HOT), S(pad(p.title, tw), HOT, { act, inv: sel }), ...(what ? [S(pad(p.kind, ww), TXT, { act })] : []),
+          S(pad(p.when || p.year, 12), TXT, { act }), S(p.live ? "● live" : "○ src", p.live ? HOT : TXT, { act })]);
+      });
+      rows.push([], [S("hover or ↑↓ to preview · click or enter to open", DIM)]);
+      return rows;
+    },
+  }),
+  project: (p) => ({
+    onShow: () => openView(p.id, "auto"),
+    render(cols) {
+      return box(p.id, (iw) => {
+        const rows = [], cur = [];
+        rows.push([S(p.title.toUpperCase(), HOT)], [S(`${p.kind} · ${p.when || p.year}`, DIM)], []);
+        wrapInto(rows, cur, p.blurb, TXT, iw); rows.push(cur.splice(0), []);
+        wrapInto(rows, cur, tags(p, 10), DIM, iw); rows.push(cur.splice(0), []);
+        const bs = [];
+        if (p.live) bs.push(btn(`▶ ${p.liveLabel || "live demo"}`, `v:${p.id}:live`, () => openView(p.id, "live")), gap());
+        bs.push(btn("architecture", `v:${p.id}:arch`, () => openView(p.id, "arch")));
+        if (p.link) bs.push(gap(), btn("source ↗", `src:${p.id}`, () => window.open(p.link, "_blank", "noopener")));
+        rows.push(...flow(bs, iw));
+        return rows;
+      }, cols);
+    },
+  }),
+  timeline: () => ({
+    render(cols, t) {
+      const age = t - (this.born || t), grow = Math.min(1, age / 1.2);
+      const wideL = cols > 70, labW = wideL ? 17 : 12, T = Math.max(20, cols - labW - 1);
+      const y0 = 2018, y1 = 2027, per = T / (y1 - y0);
+      const at = (d) => { if (d === "now") { const n = new Date(); d = `${n.getFullYear()}-${n.getMonth() + 1}`; } const [y, m] = d.split("-").map(Number); return Math.max(0, Math.min(T, ((y - y0) + (m - 1) / 12) * per)); };
+      const rows = [];
+      let axis = ""; const every = per >= 4 ? 1 : 2;
+      for (let yr = 0; yr < y1 - y0; yr += every) axis = axis.padEnd(Math.round(yr * per)) + (per >= 6 ? String(y0 + yr) : "'" + String(y0 + yr).slice(2));
+      let tick = ""; for (let c = 0; c < T; c++) tick += c === 0 || Math.floor(c / per) !== Math.floor((c - 1) / per) ? "┼" : "─";
+      const nowC = Math.round(at("now"));
+      rows.push([S(" ".repeat(labW + 1)), S(" ".repeat(Math.max(0, nowC - 5)) + "now ▼", HOT)]);
+      rows.push([S(" ".repeat(labW + 1)), S(axis.slice(0, T), DIM)]);
+      rows.push([S(" ".repeat(labW + 1)), S(tick, DIM)]);
+      GANTT.forEach((g, i) => {
+        const a = Math.round(at(g.from)), b = Math.max(a + 1, Math.round(at(g.to))), len = Math.round((b - a) * Math.min(1, Math.max(0, grow * 1.6 - i * 0.1)));
+        const act = { key: "g:" + g.key, fn: () => explain(g) };
+        rows.push([S(pad(wideL ? g.label : g.short, labW), g.hot ? HOT : TXT, { act }), gap(), S("·".repeat(a), 0.22), S(" ".repeat(len), g.lane === "work" ? 0.95 : g.hot ? HOT : 0.75, { bar: g.lane === "work" ? "solid" : "hatch", act }), S("·".repeat(Math.max(0, T - a - len)), 0.22)]);
+      });
+      return [...rows, [S(" ".repeat(labW + 1)), S(tick, DIM)], [], ...flow([S("■ work", 0.95), gap(2), S("▒ education", 0.75), gap(2), S("· click a bar for the full story", DIM)], cols)];
+    },
+  }),
+  // one timeline bar, told properly: story on the left, what I did on the right (stacked when narrow)
+  role: (g) => ({
+    render(cols) {
+      const r = C.roles[g.key];
+      return box(g.lane === "work" ? "experience" : "education", (iw) => {
+        const rows = [...flow([S(NB(r.org.toUpperCase()), HOT), gap(3), S(r.role, TXT), gap(3), S(NB(`${span(g.from, g.to)} · ${r.where}`), DIM)], iw), []];
+        const side = r.did.length && iw >= 110, lw = side ? Math.floor(iw * 0.42) : iw, rw = side ? iw - lw - 4 : iw;
+        const left = [], cur = []; wrapInto(left, cur, r.story, TXT, lw); left.push(cur.splice(0));
+        const right = r.did.flatMap((d, i) => { const b = []; wrapInto(b, cur, d, TXT, rw - 2); b.push(cur.splice(0)); return [...(i ? [[]] : []), ...b.map((l, j) => [S(j ? "  " : "▸ ", HOT), ...l])]; });
+        if (side) for (let i = 0; i < Math.max(left.length, right.length); i++) { const l = left[i] || []; rows.push([...l, S(" ".repeat(lw - rowLen(l) + 4)), ...(right[i] || [])]); }
+        else rows.push(...left, ...(right.length ? [[], ...right] : []));
+        if (r.tags.length) rows.push([], ...flow(r.tags.flatMap((t) => [S(NB(`[${t}]`), DIM), gap()]), iw));
+        if (r.project) rows.push([], ...flow([btn(`${P[r.project].title} project ›`, "role:" + r.project, () => ask(`tell me about ${P[r.project].title}`))], iw));
+        return rows;
+      }, cols, cols);
+    },
+  }),
+  skills: () => ({
+    render(cols) {
+      return box("~/stack", (iw) => Object.entries(C.skills).flatMap(([k, v]) => { const rows = [], cur = []; wrapInto(rows, cur, v.map(NB).join("  "), HOT, iw - 7); rows.push(cur); return rows.map((r, i) => [S(pad(i ? "" : k.toLowerCase(), 7), TXT), ...r]); }), cols, 90);
+    },
+  }),
+  contact: () => ({
+    render(cols) {
+      return box("contact", (iw) => [
+        [S(pad("linkedin", 9), TXT), S(C.linkedin.replace("https://www.", ""), HOT)], [S(pad("email", 9), TXT), S(C.email, HOT)], [S(pad("github", 9), TXT), S(C.github.replace("https://", ""), HOT)], [S(pad("based", 9), TXT), S(C.location, HOT)], [],
+        ...flow([btn("message me on linkedin ↗", "li", () => window.open(C.linkedin, "_blank", "noopener")), gap(), btn(copied ? "copied ✓" : "copy email", "copy", copyEmail), gap(), btn("github ↗", "gh", () => window.open(C.github, "_blank", "noopener")), gap(), btn("cv.pdf ↓", "cv", downloadCV)], iw),
+      ], cols, 90);
+    },
+  }),
+  cv: () => ({ render: () => [[btn("⇩ download cv.pdf", "cv", downloadCV), gap(2), btn("or see it as a timeline", "tl", () => ask("show me your career timeline"), TXT)]] }),
+  help: () => ({
+    render(cols) {
+      return box("help", (iw) => [["just ask", '"who are you?"  "what did you build?"  "tell me about BugSense"'], ["/projects", "all projects · /open <name|#> opens one"], ["/timeline", "work, studies and projects as a chart"], ["/stack", "tools and languages"], ["/contact", "email, github, linkedin, cv"], ["/clear", "clear · /theme green|amber|white|cyan · /reboot"], ["keys", "esc closes the viewer · ↑↓ history · enter skips typing · wheel scrolls"]]
+        .flatMap(([k, v]) => { const rows = [], cur = [S(pad(k, 11), HOT)]; wrapInto(rows, cur, v, TXT, iw); rows.push(cur); return rows; }), cols, 96);
+    },
+  }),
+};
+let copied = false;
+function copyEmail() { navigator.clipboard?.writeText(C.email); copied = true; setTimeout(() => (copied = false), 1500); }
+function downloadCV() { const a = document.createElement("a"); a.href = CV; a.download = "Atahan-Kilic-CV.pdf"; a.click(); }
+function explain(g) { const m = twinBlock(); m.widget(W.role(g)); m.closed = true; m.onDone = () => setSuggestions(FOLLOW.show_timeline); }
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function span(from, to) {   // "Aug 2023 – Mar 2024 · 8 mo"
+  const ym = (d) => { if (d === "now") { const n = new Date(); return [n.getFullYear(), n.getMonth() + 1]; } return d.split("-").map(Number); };
+  const [y0, m0] = ym(from), [y1, m1] = ym(to), n = (y1 - y0) * 12 + m1 - m0 + 1, fmt = (y, m) => `${MONTHS[m - 1]} ${y}`;
+  return `${fmt(y0, m0)} – ${to === "now" ? "now" : fmt(y1, m1)} · ${n >= 12 ? `${Math.floor(n / 12)} y${n % 12 ? ` ${n % 12} mo` : ""}` : `${n} mo`}`;
+}
+
+// ======================================================================
+// the right-hand viewer (a tmux split, drawn inside the CRT)
+// ======================================================================
+function openView(id, mode = "auto") { const p = P[id]; if (!p) return; if (mode === "auto") mode = p.live ? "live" : "arch"; pane = { kind: "project", id, mode, scroll: 0, born: performance.now() / 1000 }; }
+function openPeek(id) { pane = { kind: "peek", id, view: "preview", born: performance.now() / 1000 }; }
+function closePane() { pane = null; }
+// esc steps back out of the list's architecture view before it closes anything
+function escPane() { if (pane?.kind === "peek" && pane.view === "arch") pane.view = "preview"; else closePane(); }
+
+// ======================================================================
+// brains — both speak {type:"text"} / {type:"tool"} (see twin/worker.js)
+// ======================================================================
+const TOOLS = {
+  show_whoami: () => W.whoami(), show_projects: () => W.projects(),
+  open_project: ({ id }) => (P[id] ? W.project(P[id]) : null),
+  show_timeline: () => W.timeline(), show_skills: () => W.skills(), show_contact: () => W.contact(),
+  show_cv: () => W.cv(), show_help: () => W.help(),
+  close_viewer: () => { closePane(); return null; },
+};
+function findProject(q) {
+  for (const [id, keys] of Object.entries(ALIASES)) if (keys.some((k) => q.includes(k))) return id;
+  const n = q.match(/\b(?:open|project|proje)\s*#?(\d)\b/); if (n && C.projects[+n[1] - 1]) return C.projects[+n[1] - 1].id;
+  return null;
+}
+const has = (q, words) => words.some((w) => q.includes(w));
+function* offlineTwin(raw) {
+  const q = " " + raw.toLowerCase().replace(/[?!.,;:'"]/g, " ").replace(/\s+/g, " ").trim() + " ";
+  const T = (s) => ({ type: "text", delta: s }), X = (name, args = {}) => ({ type: "tool", name, args });
+  const pid = findProject(q);
+  if (has(q, [" hi ", " hello ", " hey ", " merhaba ", " selam ", " yo ", "good morning", "günaydın"]) && q.trim().split(" ").length <= 3) { yield T("Hey! I'm Atahan's digital twin. Ask me about my projects, my experience, my stack, or how to reach me."); return; }
+  if (has(q, [" thanks", " thank you", " thx", "teşekkür", "sağol"])) { yield T("Anytime. Anything else about my work?"); return; }
+  if (pid && !has(q, ["timeline", "career"])) {
+    const p = P[pid];
+    yield T(`${p.title}: ${p.kind.toLowerCase()}, ${(p.when || p.year).replace("—", "ongoing").trim()}. `);
+    yield T(p.live ? "I've put the live site on the right. It's real, you can click around in it." : "No public demo for this one, so the right side shows how it's put together.");
+    yield X("open_project", { id: pid }); return;
+  }
+  if (has(q, ["timeline", "career", "experience", "history", "journey", "worked", " jobs", " job ", "employ", " path", "roadmap", "deneyim", "kariyer", "tecrübe", "background", "havelsan", "nextaim", "check24"])) {
+    yield T("Here's my path so far, work and studies. Click any bar for the full story."); yield X("show_timeline"); return;
+  }
+  if (has(q, ["project", "built", " build", "portfolio", " demo", "work on", "side project", "proje", "neler yaptın", "show me what", "what have you made"])) {
+    yield T("Here's what I've built. The ● ones are live. Point at one to preview it on the right, click to open it."); yield X("show_projects"); return;
+  }
+  if (has(q, ["who are you", "whoami", "who is", "about you", "yourself", "introduce", "kimsin", "kendini", "hakkında", "what do you do", "what are you", " you do "])) {
+    yield T(`I'm ${C.name}, an AI & full-stack software engineer in Munich, finishing my M.Sc. at TUM with a thesis on BugSense. Here's the short version:`);
+    yield X("show_whoami"); return;
+  }
+  if (has(q, ["skill", "stack", " tech", " tool", "framework", "programming", " know ", "teknoloji", "react", "typescript", "python", " java", "spring", "language you"])) {
+    yield T("My toolbox, layer by layer. TypeScript and React on the front, Python with FastAPI or Django on the back, Postgres underneath, and LLM agents on top. C++ when it has to be real-time."); yield X("show_skills"); return;
+  }
+  if (has(q, ["contact", "email", "e-mail", " mail", "reach", " hire", "talk to you", "linkedin", "github", "iletişim", "ulaş"])) { yield T("LinkedIn is the best way to reach me. I usually reply within a day."); yield X("show_contact"); return; }
+  if (has(q, [" cv ", "resume", "résumé", "özgeçmiş"])) { yield T("Here's my CV."); yield X("show_cv"); return; }
+  if (has(q, ["education", "study", "studies", "university", "degree", "master", "bachelor", " tum ", "metu", "school", "eğitim", "okul"])) {
+    yield T("M.Sc. Informatics at TUM (2024 → now), with my thesis on BugSense: a deployment-ready architecture for an AI-assisted UTI diagnostic device. Before that, B.Sc. Computer Engineering at METU, 3.71 / 4.00."); yield X("show_timeline"); return;
+  }
+  if (has(q, ["where", "location", "based", " live ", " city", "nerede"])) { yield T("I'm based in Munich, Germany, and open to roles in Munich and across the EU."); return; }
+  if (has(q, ["available", "availability", "open to", "looking for", "full-time", "full time", "hiring", "müsait"])) { yield T(`${C.availability}. Want my contact details?`); return; }
+  if (has(q, ["speak", "german", "english", "turkish", "deutsch", "spoken", " dil "])) { yield T("Turkish is my native language, English C1, German A2 and improving."); return; }
+  if (has(q, ["help", "command", "what can", "yardım"])) { yield T("Ask in plain words, or use a command:"); yield X("show_help"); return; }
+  yield T("I'm only here to talk about Atahan: my work, projects, experience, and how to reach me. Try one of the suggestions below.");
+}
+const FOLLOW = {
+  show_whoami: ["show me your projects", "your career timeline", "what's your stack?", "how can I reach you?"],
+  show_projects: ["tell me about BugSense", "open Steward", "what is Harmos?", "your career timeline"],
+  open_project: ["show all projects", "your career timeline", "how can I reach you?"],
+  show_timeline: ["what did you do at HAVELSAN?", "show me your projects", "how can I reach you?"],
+  show_skills: ["show me your projects", "your career timeline", "how can I reach you?"],
+  show_contact: ["download your cv", "show me your projects"],
+  default: ["who are you?", "show me your projects", "your career timeline", "how can I reach you?"],
+};
+const MENU = [
+  ["about me", "who I am and what I build", "who are you?"],
+  ["projects", "things I've shipped", "show me your projects"],
+  ["experience", "my career timeline", "your career timeline"],
+  ["contact", "email, CV and links", "how can I reach you?"],
+];
+const menuBlock = { render: () => [...MENU.map(([label, hint, q], i) => {
+  const act = { key: "menu:" + i, fn: () => ask(q) };
+  return [S(` ${i + 1} `, HOT, { act }), S("  " + pad(label, 13), HOT, { act }), S(hint + " ", DIM, { act })];
+}), []] };
+const ENDPOINT = new URLSearchParams(location.search).get("endpoint") || window.TWIN_CONFIG?.endpoint || "";
+const history = [];
+async function* remoteTwin(text) {
+  history.push({ role: "user", content: text });
+  const res = await fetch(ENDPOINT, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history.slice(-12) }) });
+  if (!res.ok || !res.body) throw new Error("twin backend " + res.status);
+  const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "", said = "", tools = [];
+  for (;;) {
+    const { value, done } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i; while ((i = buf.indexOf("\n\n")) >= 0) {
+      const data = buf.slice(0, i).split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join(""); buf = buf.slice(i + 2);
+      if (!data || data === "[DONE]") continue;
+      const ev = JSON.parse(data); if (ev.type === "text") said += ev.delta; else if (ev.type === "tool") tools.push({ name: ev.name, args: ev.args || {} });
+      yield ev;
+    }
+  }
+  // the model sometimes writes a tool's name instead of calling it: run it anyway
+  const typed = !tools.length && said.match(TOOL_TEXT);
+  if (typed) { tools.push({ name: typed[1], args: {} }); yield { type: "tool", name: typed[1], args: {} }; }
+  history.push({ role: "assistant", content: said.replace(TOOL_TEXT_ALL, "").trim(), tools });
+}
+const TOOL_TEXT = /\[?(?:showed:\s*)?\b(show_(?:whoami|projects|timeline|skills|contact|cv|help))\b\]?/;
+const TOOL_TEXT_ALL = new RegExp(TOOL_TEXT.source, "g");
+const useLLM = () => !!ENDPOINT && cfg.engine === "llm";
+
+// ======================================================================
+// conversation
+// ======================================================================
+function setSuggestions(list) { suggestions = list || []; }
+async function ask(text) {
+  text = text.trim(); if (!text) return;
+  if (busy) { skip = true; while (busy) await sleep(16); }
+  blocks.push(userBlock(text)); scroll = 0; setSuggestions([]);
+  if (text.startsWith("/")) return slash(text);
+  busy = true; skip = false;
+  const m = twinBlock(); let lastTool = null;
+  const run = (ev) => {
+    if (ev.type === "text") { m.text(ev.delta); const last = m.parts[m.parts.length - 1]; last.s = last.s.replace(TOOL_TEXT_ALL, ""); }
+    else if (ev.type === "tool" && TOOLS[ev.name]) { lastTool = ev.name; m.widget(TOOLS[ev.name](ev.args || {})); } };
+  try {
+    if (useLLM()) { for await (const ev of remoteTwin(text)) run(ev); }
+    else for (const ev of offlineTwin(text)) run(ev);
+  } catch (e) {
+    console.warn(e); m.text(/ 429$/.test(e.message) ? "(I've talked a lot today, so you're getting the offline me) " : "(my AI link is down, so you're getting the offline me) ");
+    for (const ev of offlineTwin(text)) run(ev);
+  }
+  m.closed = true;
+  await new Promise((r) => (m.onDone = r));
+  $("#said").textContent = m.parts.filter((p) => p.kind === "text").map((p) => p.s).join(" ");
+  setSuggestions(FOLLOW[lastTool] || FOLLOW.default);
+  busy = false; skip = false;
+}
+function slash(cmd) {
+  const [c, ...rest] = cmd.slice(1).split(/\s+/), arg = rest.join(" ").toLowerCase();
+  const map = { projects: "show_projects", timeline: "show_timeline", stack: "show_skills", skills: "show_skills", contact: "show_contact", cv: "show_cv", help: "show_help", whoami: "show_whoami" };
+  if (c === "clear") { blocks.length = 0; return setSuggestions(FOLLOW.default); }
+  if (c === "reboot") return boot();
+  if (c === "close") { closePane(); return setSuggestions(FOLLOW.default); }
+  const m = twinBlock(); m.closed = true;
+  if (c === "theme") { if (PHOSPHORS[arg]) { cfg.phosphor = arg; applyTint(); } m.text(PHOSPHORS[arg] ? `phosphor → ${arg}` : "themes: " + Object.keys(PHOSPHORS).join(" · ")); }
+  else if (c === "open") { const id = findProject(" " + arg + " ") || (C.projects[+arg - 1] || {}).id; id ? m.widget(TOOLS.open_project({ id })) : m.text("open what? try /projects"); }
+  else if (map[c]) m.widget(TOOLS[map[c]]());
+  else m.text(`${c}: command not found. try /help`);
+  m.onDone = () => setSuggestions(FOLLOW[map[c]] || FOLLOW.default);
+}
+
+// ======================================================================
+// input (a hidden <input> so mobile keyboards, paste and IME just work)
+// ======================================================================
+const kbd = $("#kbd"), hist = []; let hIdx = -1;
+const focusKbd = () => kbd.focus({ preventScroll: true });
+kbd.addEventListener("input", () => (inputText = kbd.value));
+kbd.addEventListener("keydown", (e) => {
+  if (!kbd.value && blocks[blocks.length - 1] === menuBlock && MENU[+e.key - 1]) { e.preventDefault(); return ask(MENU[+e.key - 1][2]); }
+  const peeking = pane?.kind === "peek" && !kbd.value;
+  if (peeking && (e.key === "ArrowUp" || e.key === "ArrowDown")) { const i = C.projects.findIndex((p) => p.id === pane.id), n = C.projects.length; pane.id = C.projects[(i + (e.key === "ArrowUp" ? n - 1 : 1)) % n].id; pane.view = "preview"; e.preventDefault(); }
+  else if (peeking && e.key === "Enter" && !busy) { e.preventDefault(); ask(`tell me about ${P[pane.id].title}`); }
+  else if (e.key === "Enter") { e.preventDefault(); const v = kbd.value; if (!v.trim()) { if (busy) skip = true; return; } kbd.value = inputText = ""; hist.unshift(v); hIdx = -1; ask(v); }
+  else if (e.key === "ArrowUp") { hIdx = Math.min(hist.length - 1, hIdx + 1); kbd.value = inputText = hist[hIdx] || ""; e.preventDefault(); }
+  else if (e.key === "ArrowDown") { hIdx = Math.max(-1, hIdx - 1); kbd.value = inputText = hist[hIdx] || ""; e.preventDefault(); }
+  else if (e.key === "Tab") { if (kbd.value.startsWith("/")) { const m = ["/projects", "/timeline", "/stack", "/contact", "/cv", "/help", "/clear", "/theme ", "/open ", "/close", "/whoami", "/reboot"].find((c) => c.startsWith(kbd.value)); if (m) kbd.value = inputText = m; } e.preventDefault(); }
+  else if (e.key === "Escape") escPane();
+  else if (e.key === "PageUp") scroll += 10; else if (e.key === "PageDown") scroll = Math.max(0, scroll - 10);
+});
+addEventListener("keydown", (e) => {
+  if (e.target === kbd) return;
+  if (e.key === "Escape") escPane();
+  if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) focusKbd();
+});
+
+// ======================================================================
+// text canvas (the "video memory") + layout
+// ======================================================================
+const tc = document.createElement("canvas"), tx = tc.getContext("2d");
+const cell = { w: 10, h: 20, fs: 20, x0: 0, y0: 0 }; let COLS = 80, ROWS = 24;
+function layoutText() {
+  const scale = Math.min(devicePixelRatio, 2) * cfg.resolution;
+  tc.width = Math.floor(innerWidth * scale); tc.height = Math.floor(innerHeight * scale);
+  const fs = cfg.fontSize * scale; tx.font = `${fs}px VT323, monospace`;
+  const margin = 0.025 + cfg.curvature * 0.03;
+  Object.assign(cell, { fs, w: tx.measureText("M").width, h: fs * 1.05, x0: tc.width * margin + 14 * scale, y0: tc.height * margin + 6 * scale });
+  COLS = Math.floor((tc.width - cell.x0 * 2) / cell.w); ROWS = Math.floor((tc.height - cell.y0 * 2) / cell.h);
+}
+let hits = [], hoverKey = null, paneBox = null;
+const lum = (b) => { const v = Math.round(255 * b); return `rgb(${v},${v},${v})`; };
+// glyphs VT323 lacks (✉ …) come from a fallback font and can be wider than a cell; squeeze them into it
+const glyphW = new Map();
+function glyph(ch, x, y, w) {
+  const key = ch + tx.font; let gw = glyphW.get(key); if (gw === undefined) glyphW.set(key, (gw = tx.measureText(ch).width));
+  if (gw <= w * 1.02) return tx.fillText(ch, x, y);
+  tx.save(); tx.translate(x, y); tx.scale(w / gw, 1); tx.fillText(ch, 0, 0); tx.restore();
+}
+function drawRow(row, col, r, maxCols) {
+  const { w, h, x0, y0 } = cell, y = y0 + r * h;
+  let c = col;
+  for (const s of row) {
+    if (c - col >= maxCols) break;
+    const t = s.t.slice(0, maxCols - (c - col)), x = x0 + c * w, wid = t.length * w;
+    if (s.act) hits.push({ x, y, w: wid, h, act: s.act });
+    const hot = s.inv || (s.act && s.act.key === hoverKey);
+    if (s.bar) {
+      tx.fillStyle = lum(hot ? 1 : s.b);
+      if (s.bar === "solid") tx.fillRect(x, y + h * 0.16, wid, h * 0.62);
+      else for (let k = 0; k < t.length * 3; k++) tx.fillRect(x + k * w / 3, y + h * 0.16, w / 6, h * 0.62);
+    } else if (hot) {
+      tx.fillStyle = lum(s.inv ? s.b : 1); tx.fillRect(x, y, wid, h);
+      tx.fillStyle = "#000"; for (let i = 0; i < t.length; i++) if (t[i] !== " ") glyph(t[i], x + i * w, y, w);
+    } else {
+      tx.fillStyle = lum(s.b); for (let i = 0; i < t.length; i++) if (t[i] !== " ") glyph(t[i], x + i * w, y, w);
+    }
+    c += t.length;
+  }
+}
+function drawPane(px, py, pw, ph, t) {
+  // px,py in cells; pw,ph in cells
+  const { w, h, x0, y0 } = cell, X = x0 + px * w, Y = y0 + py * h, Wd = pw * w, Ht = ph * h;
+  // vertical divider, stopping short of the separator row so it doesn't cross the ┄ line
+  tx.fillStyle = lum(DIM); tx.fillRect(X - w * 0.6, Y, Math.max(1, w * 0.12), Ht);
+  let live = null;
+  paneBox = { x: X, y: Y, w: Wd, h: Ht };
+  if (pane.kind === "peek") {
+    // still in the project list: the architecture opens in place, with a way back to the preview
+    const arch = pane.view === "arch";
+    if (!arch && hoverKey?.startsWith("open:") && P[hoverKey.slice(5)]) pane.id = hoverKey.slice(5);
+    const p = P[pane.id], i = C.projects.indexOf(p), a = C.arch[p.id] || {};
+    const open = () => ask(`tell me about ${p.title}`);
+    const acts = [...(p.live ? [btn("▶ live demo ↗", "peek:live", () => window.open(p.live, "_blank", "noopener")), gap()] : []),
+      ...(arch ? [] : [btn("architecture", "peek:arch", () => { pane.view = "arch"; pane.scroll = 0; }, TXT), gap()]),
+      btn("open ›", "peek:open", open), ...(p.link ? [gap(), btn("source ↗", "peek:src", () => window.open(p.link, "_blank", "noopener"), TXT)] : [])];
+    drawRow([...(arch ? [btn("← back", "peek:back", () => (pane.view = "preview"), HOT), gap()] : []), S(" 1:projects ", 1, { inv: true }),
+      S(arch ? `  architecture · ${p.title}` : `  preview · ${i + 1}/${C.projects.length}`, DIM)], px, py, pw - 4);
+    drawRow([btn("x", "pane:x", closePane, TXT)], px + pw - 3, py, 3);
+    if (arch) {
+      const rows = [[S(p.title.toUpperCase(), HOT), S("  " + (p.when || p.year), DIM)], ...archRows(p, pw), ...flow(acts, pw)];
+      scrollRows(rows, px, py + 2, pw, ph - 2);
+      return live;
+    }
+    // the live site as the preview, loaded once the pointer settles so sweeping the list doesn't fire seven page loads
+    if (pane.shownId !== pane.id) { pane.shownId = pane.id; pane.since = t; }
+    const mh = p.live ? Math.max(6, Math.floor(ph * 0.45)) : 0, top = py + 2 + (mh ? mh + 1 : 0);
+    if (mh) {
+      const iy = y0 + (py + 2) * h, ih = mh * h;
+      drawRow([S("loading " + new URL(p.live).host + " …", DIM)], px + 1, py + 2, pw - 2);
+      tx.strokeStyle = lum(0.35); tx.lineWidth = Math.max(1, w * 0.1); tx.strokeRect(X, iy, Wd, ih);
+      hits.push({ x: X, y: iy, w: Wd, h: ih, act: { key: "peek:site", fn: open } });
+      if (t - pane.since > 0.3) live = { x: X, y: iy, w: Wd, h: ih, src: p.live, zoom: Math.min(1, Wd / 1280), passive: true };
+    }
+    const rows = [[S(p.title.toUpperCase(), HOT), S("  " + (p.when || p.year), DIM)], [S(p.kind, DIM)], []], cur = [];
+    wrapInto(rows, cur, p.blurb, TXT, pw); rows.push(cur.splice(0), [], [S("// data flow", DIM)]);
+    wrapInto(rows, cur, (a.flow || []).map((s, k) => NB((k ? "──▶ " : "") + `[ ${s} ]`)).join(" "), HOT, pw); rows.push(cur.splice(0), []);
+    wrapInto(rows, cur, tags(p, 10), DIM, pw); rows.push(cur.splice(0), []);
+    rows.push(...flow(acts, pw));
+    rows.slice(0, py + ph - top).forEach((r, k) => drawRow(r, px, top + k, pw));
+    return live;
+  }
+  const p = P[pane.id], modes = [p.live && "live", "arch"].filter(Boolean);
+  const head = [S(` ${p.id} `, 1, { inv: true }), gap()];
+  modes.forEach((m) => head.push(btn(m, "pane:" + m, () => (pane.mode = m), pane.mode === m ? HOT : DIM), gap()));
+  drawRow(head, px, py, pw);
+  drawRow([btn("↗", "pane:ext", () => window.open(p.live || p.link, "_blank", "noopener"), TXT), gap(), btn("x", "pane:x", closePane, TXT)], px + pw - 7, py, 7);
+  drawRow([S(pane.mode === "live" || !p.link ? p.live || "" : p.link.replace("https://", ""), DIM)], px, py + 1, pw);
+  const by = py + 3, bh = ph - 3;
+  if (pane.mode === "live") {
+    drawRow([S("connecting to " + new URL(p.live).host + " …", DIM)], px, by, pw);
+    live = { x: X, y: y0 + by * h, w: Wd, h: bh * h, src: p.live };
+  } else {
+    const rows = archRows(p, pw);
+    if (p.link) rows.push([btn("source ↗", "pane:gh", () => window.open(p.link, "_blank", "noopener"))]);
+    scrollRows(rows, px, by, pw, bh);
+  }
+  return live;
+}
+// draws rows into the pane body, scrolled by the wheel, with a hint when they don't fit
+function scrollRows(rows, px, by, pw, bh) {
+  const room = rows.length > bh ? bh - 1 : bh, max = Math.max(0, rows.length - room);
+  pane.scroll = Math.max(0, Math.min(pane.scroll || 0, max));
+  rows.slice(pane.scroll, pane.scroll + room).forEach((r, k) => drawRow(r, px, by + k, pw));
+  if (max) drawRow([S(pane.scroll < max ? `↓ ${max - pane.scroll} more · wheel` : `↑ ${max} more · wheel`, 0.4)], px, by + room, pw);
+}
+// the architecture view: overview, data flow, components, decisions, stack
+function archRows(p, cols) {
+  const a = C.arch[p.id] || {}, rows = [], cur = [];
+  const para = (text, b) => { wrapInto(rows, cur, text, b, cols); rows.push(cur.splice(0)); };
+  const head = (t) => rows.push([], [S("// " + t, DIM)]);
+  const hang = (lead, w, text, lb) => { const sub = [], c = []; wrapInto(sub, c, text, TXT, cols - w); sub.push(c); sub.forEach((r, i) => rows.push([S(pad(i ? "" : lead, w), lb), ...r])); };
+  para(a.summary || p.blurb, TXT);
+  head("data flow"); para((a.flow || []).map((s, i) => NB((i ? "──▶ " : "") + `[ ${s} ]`)).join(" "), HOT);
+  if (a.parts) {
+    head("components");
+    const w = Math.min(Math.max(...a.parts.map(([n]) => n.length)) + 2, Math.floor(cols / 3));
+    a.parts.forEach(([n, d]) => hang(n, w, d, HOT));
+  }
+  if (a.decisions) { head("decisions"); a.decisions.forEach((d) => hang("·", 2, d, DIM)); }
+  head("stack"); para(tags(p), TXT);
+  rows.push([]);
+  return rows;
+}
+
+const LEGAL = ["impressum", "privacy"].map((k) => ({ key: "legal:" + k, fn: () => open(k + ".html", "_blank", "noopener") }));
+function fitRows(labels) { let rows = 1, w = 0; for (const l of labels) { if (w + l.length > COLS && w) { rows++; w = 0; } w += l.length; } return rows; }
+function drawScreen(t) {
+  tx.fillStyle = "#000"; tx.fillRect(0, 0, tc.width, tc.height);
+  tx.font = `${cell.fs}px VT323, monospace`; tx.textBaseline = "top";
+  hits = []; let scrollHint = "";
+  // bottom chrome: suggestions, prompt, status
+  const sugRows = []; let cur = [];
+  suggestions.forEach((s, i) => { const seg = btn(s, "sug:" + i, () => ask(s), TXT); if (rowLen(cur) + seg.t.length + 1 > COLS) { sugRows.push(cur); cur = []; } cur.push(seg, gap()); });
+  if (cur.length) sugRows.push(cur);
+  // reserve room for the tallest follow-up list, so suggestions coming and going never resize the log
+  const sugH = Math.max(sugRows.length, ...Object.values(FOLLOW).map((l) => fitRows(l.map((q) => `[${q}] `))));
+  while (sugRows.length < sugH) sugRows.unshift([]);
+  const promptR = ROWS - 1, sugTop = promptR - sugRows.length - (sugRows.length ? 0 : 0), sepR = sugTop - 1;
+  const logRows = Math.max(4, sepR);
+  const split = pane && COLS >= 60, share = pane?.kind === "peek" ? (COLS >= 110 ? 0.64 : 0.58) : (COLS >= 110 ? 0.42 : 0.38);
+  const leftCols = split ? Math.floor(COLS * share) : COLS;
+  const lc = pane && !split ? 0 : leftCols;
+  // log
+  if (lc > 0) {
+    const all = []; blocks.forEach((b) => { const r = b.render(lc, t); b.rows = r.length; all.push(...(b.revealed ? r : r.slice(0, Math.floor(b.rev || 0)))); });
+    const maxScroll = Math.max(0, all.length - logRows); scroll = Math.min(scroll, maxScroll);
+    const start = Math.max(0, all.length - logRows - scroll);
+    all.slice(start, start + logRows).forEach((r, i) => drawRow(r, 0, i, lc));
+    if (maxScroll > 0) scrollHint = scroll ? ` ↑ ${start} more · ↓ ${scroll} ` : ` ↑ ${start} more · wheel `;
+  }
+  let live = null;
+  if (pane) {
+    const shown = cfg.lps >= 400 ? logRows + 1 : Math.floor((t - pane.born) * cfg.lps), clipY = cell.y0 + shown * cell.h;
+    tx.save(); tx.beginPath(); tx.rect(0, 0, tc.width, clipY); tx.clip();
+    live = drawPane(split ? leftCols + 2 : 0, 0, split ? COLS - leftCols - 2 : COLS, logRows, t);
+    tx.restore();
+    if (live) live.reveal = Math.max(0, Math.min(1, (clipY - live.y) / live.h));
+  }
+  // separator + suggestions + prompt
+  drawRow([S("┄".repeat(Math.max(0, COLS - scrollHint.length)), 0.22), S(scrollHint, 0.4)], 0, sepR, COLS);
+  sugRows.forEach((r, i) => drawRow(r, 0, sugTop + i, COLS));
+  const ps = "> ", room = COLS - ps.length - 2, shown = inputText.length > room ? "…" + inputText.slice(-room + 1) : inputText;
+  const caret = Math.floor(t * 2.2) % 2 === 0;
+  drawRow([S(ps, HOT), S(shown, HOT), S(" ", HOT, { inv: caret })], 0, promptR, COLS);
+  const legal = [S("impressum", 0.3, { act: LEGAL[0] }), S(" · ", 0.3), S("privacy", 0.3, { act: LEGAL[1] })];
+  if (COLS - rowLen(legal) > ps.length + shown.length + 4) drawRow(legal, COLS - rowLen(legal), promptR, rowLen(legal));
+  return live;
+}
+
+// ======================================================================
+// WebGL CRT (unchanged from v1: persistence + barrel, bloom, mask, scanlines)
+// ======================================================================
+const canvas = $("#crt");
+const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false });
+const VS = `attribute vec2 p; varying vec2 uv; void main(){ uv = p*.5+.5; gl_Position = vec4(p,0.,1.); }`;
+const FS_PERSIST = `precision mediump float; varying vec2 uv; uniform sampler2D cur, prev; uniform float decay;
+void main(){ vec3 c = texture2D(cur, vec2(uv.x,1.-uv.y)).rgb; vec3 p = texture2D(prev, uv).rgb * decay; gl_FragColor = vec4(max(c,p),1.); }`;
+const FS_CRT = `precision highp float; varying vec2 uv;
+uniform sampler2D tex; uniform vec2 res; uniform float time, curve, scan, mask, bloom, aberr, noise, flicker, vignette, power, jitter, glow;
+uniform vec3 tint; uniform vec4 area;
+float rand(vec2 c){ return fract(sin(dot(c, vec2(12.9898,78.233))) * 43758.5453); }
+vec2 barrel(vec2 u){ u = u*2.-1.; vec2 o = abs(u.yx)/vec2(6.,4.)*curve; u += u*o*o*3.; return u*.5+.5; }
+vec3 samp(vec2 u){ return texture2D(tex, u).rgb; }
+void main(){
+  vec2 u = barrel(uv);
+  // power-on: a halo opens from the centre out to the area the terminal uses, revealing the text
+  // as it goes, then fades once the picture is up
+  vec2 ac = (area.xy + area.zw)*.5, ah = (area.zw - area.xy)*.5, dd = abs(u - ac);
+  float ow = 1. - pow(1. - smoothstep(0., .28, power), 3.), oh = 1. - pow(1. - smoothstep(.1, .72, power), 3.);
+  float hw = ah.x*mix(.03, 1.1, ow), hh = ah.y*1.13*oh + .0015;   // oversized so the rounded corners clear the text
+  // the opening is shaped like a tube face: edges bow outward, corners stay sharp. It sits in
+  // barrel space, so it bends with the curvature setting too, and keeps a bow of its own when that is 0
+  vec2 nd = dd / vec2(hw, hh);
+  float k = (.05 + curve*.08) * smoothstep(.15, .9, oh);   // the line starts straight, the bow grows as it opens
+  nd.y /= 1. + k*(1. - min(nd.x*nd.x, 1.));
+  nd.x /= 1. + k*.6*(1. - min(nd.y*nd.y, 1.));
+  float se = max(nd.x, nd.y);   // square corners: the opening runs all the way into them
+  float inside = 1. - smoothstep(1. - .006/hh, 1., se);
+  float edgeY = exp(-pow((se - 1.)*hh/.005, 2.));
+  float outer = exp(-max(se - 1., 0.)*hh/.03);
+  float haloAmt = smoothstep(0., .04, power) * (1. - smoothstep(.72, 1., power));
+  vec3 halo = (tint*.7 + .15) * haloAmt * (inside*.01 + edgeY*.18 + outer*.03);   // barely there: a faint edge, almost no glow
+
+  float j = (rand(vec2(floor(time*30.), floor(u.y*80.))) - .5) * jitter * .004;
+  u.x += j;
+  if(u.x<0.||u.x>1.||u.y<0.||u.y>1.){ gl_FragColor = vec4(halo,1.); return; }
+  vec2 px = 1./res;
+  float a = aberr * px.x * 2.;
+  vec3 col = vec3(samp(u+vec2(a,0.)).r, samp(u).g, samp(u-vec2(a,0.)).b);
+  vec3 b = vec3(0.);
+  for(int i=0;i<12;i++){ float ang = float(i)*.5236; vec2 d = vec2(cos(ang), sin(ang));
+    b += samp(u + d*px*3.*glow); b += samp(u + d*px*7.*glow)*.6; }
+  col += b/19.2 * bloom;
+  float l = dot(col, vec3(.333));
+  vec3 c = tint * l + pow(l, 3.) * vec3(.35);
+  float sl = .5 + .5*sin(u.y*res.y*3.14159*.5);
+  c *= mix(1., sl*1.4, scan);
+  float m = mod(gl_FragCoord.x, 3.);
+  vec3 mk = m<1. ? vec3(1.,.7,.7) : m<2. ? vec3(.7,1.,.7) : vec3(.7,.7,1.);
+  c *= mix(vec3(1.), mk*1.15, mask);
+  c += (rand(u*res + time) - .5) * noise * .25 * tint;
+  c *= 1. - flicker * .06 * sin(time*110.) ;
+  vec2 v = u*(1.-u.yx); c *= pow(v.x*v.y*15., vignette*.45);
+  c += tint * .018;
+  gl_FragColor = vec4(c * mix(inside, 1., step(1., power)) + halo,1.);
+}`;
+function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s)); return s; }
+function prog(fs) { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); return p; }
+const pPersist = prog(FS_PERSIST), pCrt = prog(FS_CRT);
+const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+function tex() { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; }
+const textTex = tex();
+let fb = [], fbt = [];
+function makeFB() {
+  fb.forEach((f) => gl.deleteFramebuffer(f)); fbt.forEach((t) => gl.deleteTexture(t)); fb = []; fbt = [];
+  for (let i = 0; i < 2; i++) {
+    const t = tex(); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, tc.width, tc.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    fb.push(f); fbt.push(t);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+function bindQuad(p) { const loc = gl.getAttribLocation(p, "p"); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0); }
+function hex(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; }
+function resize() {
+  layoutText();
+  const s = Math.min(devicePixelRatio, 2);
+  canvas.width = innerWidth * s; canvas.height = innerHeight * s;
+  makeFB();
+}
+
+// screen ↔ video-memory mapping through the same barrel the shader uses
+function barrel(x, y) { let u = x * 2 - 1, v = y * 2 - 1; const ox = (Math.abs(v) / 6) * cfg.curvature, oy = (Math.abs(u) / 4) * cfg.curvature; u += u * ox * ox * 3; v += v * oy * oy * 3; return [u * 0.5 + 0.5, v * 0.5 + 0.5]; }
+function screenToTex(cx, cy) { const [u, v] = barrel(cx / innerWidth, 1 - cy / innerHeight); return [u * tc.width, (1 - v) * tc.height]; }
+function texToScreen(px, py) {
+  const tu = px / tc.width, tv = 1 - py / tc.height; let u = tu, v = tv;
+  for (let i = 0; i < 10; i++) { const [bu, bv] = barrel(u, v); u -= bu - tu; v -= bv - tv; }
+  return [u * innerWidth, (1 - v) * innerHeight];
+}
+
+// live site overlay: positioned over the pane body, inside the bent glass
+const liveEl = $("#live"), liveFrame = liveEl.querySelector("iframe");
+function placeLive(r) {
+  if (!r || powerT < 0.95) { if (liveEl.classList.contains("on")) { liveEl.classList.remove("on"); } return; }
+  const [ax, ay] = texToScreen(r.x, r.y), [bx, by] = texToScreen(r.x + r.w, r.y + r.h), [cx] = texToScreen(r.x + r.w, r.y), [, dy] = texToScreen(r.x, r.y + r.h);
+  const L = Math.max(ax, texToScreen(r.x, r.y + r.h)[0]) + 2, T = Math.max(ay, texToScreen(r.x + r.w, r.y)[1]) + 2, R = Math.min(bx, cx) - 2, B = Math.min(by, dy) - 2;
+  Object.assign(liveEl.style, { left: L + "px", top: T + "px", width: Math.max(0, R - L) + "px", height: Math.max(0, B - T) + "px" });
+  if (liveFrame.dataset.src !== r.src) { liveFrame.dataset.src = r.src; liveFrame.src = r.src; }
+  const z = r.zoom || 1;
+  Object.assign(liveFrame.style, { width: 100 / z + "%", height: 100 / z + "%", transform: z < 1 ? `scale(${z})` : "", transformOrigin: "0 0" });
+  liveEl.style.pointerEvents = r.passive ? "none" : "";
+  liveEl.style.clipPath = r.reveal < 1 ? `inset(0 0 ${(1 - r.reveal) * 100}% 0)` : "";
+  liveEl.classList.add("on");
+}
+
+// pointer: hover + click through the curve
+let pointer = null;
+canvas.addEventListener("pointermove", (e) => { pointer = [e.clientX, e.clientY]; });
+canvas.addEventListener("pointerleave", () => (pointer = null));
+canvas.addEventListener("click", (e) => {
+  const [x, y] = screenToTex(e.clientX, e.clientY), h = hits.find((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+  if (h) h.act.fn(); focusKbd();
+});
+// accumulate wheel delta so trackpads (many small events) don't race; ~1 row per 40px, 1 row per wheel line
+let wheelAcc = 0;
+canvas.addEventListener("wheel", (e) => {
+  wheelAcc += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  const rows = Math.trunc(wheelAcc / 40);
+  if (!rows) return;
+  wheelAcc -= rows * 40;
+  const [x, y] = screenToTex(e.clientX, e.clientY), b = paneBox;
+  if ((pane?.kind === "project" || pane?.view === "arch") && b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) pane.scroll = (pane.scroll || 0) + rows;
+  else scroll = Math.max(0, scroll - rows);
+}, { passive: true });
+let touchY = null;
+canvas.addEventListener("touchstart", (e) => (touchY = e.touches[0].clientY), { passive: true });
+canvas.addEventListener("touchmove", (e) => { const d = e.touches[0].clientY - touchY; if (Math.abs(d) > 18) { scroll = Math.max(0, scroll + Math.sign(d)); touchY = e.touches[0].clientY; } }, { passive: true });
+
+// ======================================================================
+// frame loop
+// ======================================================================
+let ping = 0, last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame); // schedule first: one bad frame must never freeze the screen
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const t = now / 1000;
+  powerT = Math.min(1, powerT + dt / 0.55);   // ~0.55 s for the halo to open and fade
+  for (const b of blocks) {
+    if (b.revealed) { b.tick?.(dt); continue; }
+    b.rev = skip || cfg.lps >= 400 ? Infinity : Math.min((b.rev || 0) + cfg.lps * dt, b.rows ?? 1);
+    if (b.rev < (b.rows ?? 1)) break;              // later blocks wait their turn
+    b.tick?.(dt);
+    if (!b.tick || b.done) b.revealed = true; else break;
+  }
+  if (pointer) { const [x, y] = screenToTex(...pointer); const h = hits.find((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h); hoverKey = h ? h.act.key : null; canvas.classList.toggle("link", !!h); }
+  const live = drawScreen(t);
+  placeLive(live);
+  gl.bindTexture(gl.TEXTURE_2D, textTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tc);
+  gl.useProgram(pPersist); bindQuad(pPersist);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb[ping]); gl.viewport(0, 0, tc.width, tc.height);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, textTex); gl.uniform1i(gl.getUniformLocation(pPersist, "cur"), 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, fbt[1 - ping]); gl.uniform1i(gl.getUniformLocation(pPersist, "prev"), 1);
+  gl.uniform1f(gl.getUniformLocation(pPersist, "decay"), cfg.persistence);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(pCrt); bindQuad(pCrt);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, fbt[ping]);
+  const U = (n) => gl.getUniformLocation(pCrt, n);
+  gl.uniform1i(U("tex"), 0); gl.uniform2f(U("res"), tc.width, tc.height); gl.uniform1f(U("time"), t);
+  gl.uniform1f(U("curve"), cfg.curvature); gl.uniform1f(U("scan"), cfg.scanlines); gl.uniform1f(U("mask"), cfg.mask);
+  gl.uniform1f(U("bloom"), cfg.bloom); gl.uniform1f(U("glow"), cfg.bloomRadius); gl.uniform1f(U("aberr"), cfg.aberration);
+  gl.uniform1f(U("noise"), cfg.noise); gl.uniform1f(U("flicker"), cfg.flicker); gl.uniform1f(U("vignette"), cfg.vignette);
+  gl.uniform1f(U("jitter"), cfg.jitter); gl.uniform1f(U("power"), powerT);
+  gl.uniform4f(U("area"), (cell.x0 - cell.w) / tc.width, 1 - (cell.y0 + (ROWS + 0.5) * cell.h) / tc.height, (cell.x0 + (COLS + 1) * cell.w) / tc.width, 1 - (cell.y0 - cell.h * 0.5) / tc.height);
+  gl.uniform3fv(U("tint"), hex(PHOSPHORS[cfg.phosphor]));
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  ping = 1 - ping;
+}
+
+// ======================================================================
+// boot
+// ======================================================================
+async function boot() {
+  busy = true; skip = false; blocks.length = 0; setSuggestions([]); closePane(); powerT = 0;
+  const out = async (s, b = 0.55) => blocks.push(lineBlock([[S(s, b)]]));   // already on the tube; the halo reveals it
+  const hi = [
+    "██   ██ ██",
+    "██   ██ ██",
+    "███████ ██",
+    "██   ██ ██",
+    "██   ██ ██", ""];
+  const name = COLS >= 77 ? [
+    "█ █ █▄ ▄█    ▄▀▀▀▄ ▀▀█▀▀ ▄▀▀▀▄ █   █ ▄▀▀▀▄ █▄  █    █  ▄▀ █ █     █ ▄▀▀▀▀",
+    "█   █ ▀ █    █▀▀▀█   █   █▀▀▀█ █▀▀▀█ █▀▀▀█ █ ▀▄█    █▀▀▄  █ █     █ █",
+    "▀   ▀   ▀    ▀   ▀   ▀   ▀   ▀ ▀   ▀ ▀   ▀ ▀   ▀    ▀   ▀ ▀ ▀▀▀▀▀ ▀  ▀█▀▀"] : COLS >= 64 ? [
+    "▄▀▀▀▄ ▀▀█▀▀ ▄▀▀▀▄ █   █ ▄▀▀▀▄ █▄  █    █  ▄▀ █ █     █ ▄▀▀▀▀",
+    "█▀▀▀█   █   █▀▀▀█ █▀▀▀█ █▀▀▀█ █ ▀▄█    █▀▀▄  █ █     █ █",
+    "▀   ▀   ▀   ▀   ▀ ▀   ▀ ▀   ▀ ▀   ▀    ▀   ▀ ▀ ▀▀▀▀▀ ▀  ▀█▀▀"] : ["I'M ATAHAN KILIÇ"];
+  for (const l of [...hi, ...name]) await out(l, 1);
+  const link = (t, key, fn) => S(t, TXT, { act: { key: "hdr:" + key, fn } });
+  const links = [link("github ↗", "gh", () => window.open(C.github, "_blank", "noopener")), gap(2), link("linkedin ↗", "li", () => window.open(C.linkedin, "_blank", "noopener")), gap(2),
+    link("email ✉", "mail", () => (location.href = "mailto:" + C.email)), gap(2), link("cv ↓", "cv", downloadCV)];
+  const sub = S(`${C.role} · ${C.location}`, 0.95), nameW = Math.max(...name.map((l) => l.length));
+  blocks.push({ render(cols) {   // links sit on the title row, flush with the name's right edge; wrap below when it won't fit
+    const w = Math.min(cols, Math.max(nameW, sub.t.length + rowLen(links) + 5)), room = w - sub.t.length - rowLen(links);
+    return [[], ...(room >= 3 ? [[sub, gap(room), ...links]] : [[sub], [], ...flow(links, cols)]), [], []];
+  } });
+  blocks.push(textBlock(useLLM()
+    ? "This terminal is my digital twin, an AI (an OpenAI model) that knows my work, my projects and my career and answers as me. It can get things wrong, so please don't share personal data. Type a question, or pick one to start:"
+    : "This terminal is my digital twin, a scripted bot that knows my work, my projects and my career and answers as me. Type a question, or pick one to start:"));
+  blocks.push(lineBlock([[]]), menuBlock);
+  busy = false;
+  focusKbd();
+}
+
+// a11y / crawler mirror of everything the screen can show
+$("#sr").innerHTML = `<h1>${C.name} — ${C.role}</h1><p>${C.tagline}</p>${C.about.map((p) => `<p>${p}</p>`).join("")}<h2>Projects</h2>` +
+  C.projects.map((p) => `<h3><a href="${p.live || p.link}">${p.title}</a></h3><p>${p.blurb}</p>`).join("") + `<h2>Contact</h2><p><a href="mailto:${C.email}">${C.email}</a> · <a href="${CV}">CV</a></p><p><a href="impressum.html">Impressum</a> · <a href="privacy.html">Privacy</a></p>`;
+
+// ======================================================================
+// config (tube settings + twin settings)
+// ======================================================================
+const cfg = {
+  phosphor: "green", curvature: 0, vignette: 0.7, scanlines: 0, mask: 0,
+  bloom: 0.4, bloomRadius: 1.22, aberration: 0, persistence: 0.31, noise: 0.55, flicker: 0, jitter: 0,
+  fontSize: 27, resolution: 0.88, lps: 45, cps: 760, // lps/cps: 400 / 2000 = instant
+  tint: 0.34, engine: "llm", // "offline" = scripted brain only
+};
+function applyTint() {
+  liveEl.querySelector(".tint").style.background = PHOSPHORS[cfg.phosphor];
+  liveEl.querySelector(".tint").style.opacity = cfg.tint;
+}
+applyTint();
+addEventListener("resize", resize);
+document.fonts.load("24px VT323").finally(() => { resize(); boot(); requestAnimationFrame(frame); });
+</script>
+</body>
+</html>

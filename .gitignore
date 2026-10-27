@@ -1,0 +1,9 @@
+.idea/
+.impeccable/
+*.mov
+node_modules/
+.wrangler/
+.dev.vars
+Screenshot *.png
+Screen Recording *
+/cv (*).pdf

@@ -1,0 +1,9 @@
+html{background:#050505;color:#d6d6d6;font:22px/1.35 VT323,monospace}
+body{max-width:46rem;margin:0 auto;padding:2.5rem 1.25rem 4rem}
+h1{font-size:2.2rem;font-weight:400;margin:0 0 1.5rem;color:#fff}
+h2{font-size:1.4rem;font-weight:400;margin:2rem 0 .4rem;color:#fff}
+p,li{color:#bdbdbd}
+a{color:#fff}
+.back{display:inline-block;margin-bottom:2rem;color:#8a8a8a;text-decoration:none}
+.back:hover{color:#fff}
+.todo{background:#fff;color:#000;padding:0 .3em}
