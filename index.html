@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">
 <title>Atahan Kılıç — digital twin</title>
 <meta name="description" content="Talk to the digital twin of Atahan Kılıç, an AI & full-stack software engineer in Munich. Ask about projects, experience and how to reach him.">
 <link href="assets/fonts/vt323.css" rel="stylesheet">
 <style>
   html,body{margin:0;height:100%;background:#050505;overflow:hidden}
-  canvas#crt{position:fixed;inset:0;width:100vw;height:100vh;display:block;cursor:text;touch-action:pan-y}
+  canvas#crt{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;cursor:text;touch-action:pan-y}
   canvas#crt.link{cursor:pointer}
-  #kbd{position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px}
+  #kbd{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px}
   /* the one thing that can't live inside the shader: a live, interactive website */
   #live{position:fixed;display:none;z-index:3;background:#000}
   #live.on{display:block}
@@ -23,7 +23,7 @@
 </head>
 <body>
 <canvas id="crt" aria-hidden="true"></canvas>
-<input id="kbd" autocapitalize="off" autocomplete="off" spellcheck="false" enterkeyhint="send" aria-label="Ask Atahan's digital twin">
+<form id="kbdForm" action="javascript:void 0"><input id="kbd" autocapitalize="off" autocomplete="off" spellcheck="false" enterkeyhint="send" aria-label="Ask Atahan's digital twin"></form>
 <div id="live"><iframe title="live demo" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" referrerpolicy="no-referrer"></iframe><div class="tint"></div><div class="lines"></div><div class="edge"></div></div>
 <main class="sr" id="sr"></main>
 <div class="sr" id="said" aria-live="polite"></div>
@@ -461,13 +461,16 @@ kbd.addEventListener("keydown", (e) => {
   const peeking = pane?.kind === "peek" && !kbd.value;
   if (peeking && (e.key === "ArrowUp" || e.key === "ArrowDown")) { const i = C.projects.findIndex((p) => p.id === pane.id), n = C.projects.length; pane.id = C.projects[(i + (e.key === "ArrowUp" ? n - 1 : 1)) % n].id; pane.view = "preview"; e.preventDefault(); }
   else if (peeking && e.key === "Enter" && !busy) { e.preventDefault(); ask(`tell me about ${P[pane.id].title}`); }
-  else if (e.key === "Enter") { e.preventDefault(); const v = kbd.value; if (!v.trim()) { if (busy) skip = true; return; } kbd.value = inputText = ""; hist.unshift(v); hIdx = -1; ask(v); }
+  else if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); submit(); }
   else if (e.key === "ArrowUp") { hIdx = Math.min(hist.length - 1, hIdx + 1); kbd.value = inputText = hist[hIdx] || ""; e.preventDefault(); }
   else if (e.key === "ArrowDown") { hIdx = Math.max(-1, hIdx - 1); kbd.value = inputText = hist[hIdx] || ""; e.preventDefault(); }
   else if (e.key === "Tab") { if (kbd.value.startsWith("/")) { const m = ["/projects", "/timeline", "/stack", "/contact", "/cv", "/help", "/clear", "/theme ", "/open ", "/close", "/whoami", "/reboot"].find((c) => c.startsWith(kbd.value)); if (m) kbd.value = inputText = m; } e.preventDefault(); }
   else if (e.key === "Escape") escPane();
   else if (e.key === "PageUp") scroll += 10; else if (e.key === "PageDown") scroll = Math.max(0, scroll - 10);
 });
+function submit() { const v = kbd.value; inputText = v; if (!v.trim()) { if (busy) skip = true; return; } kbd.value = inputText = ""; hist.unshift(v); hIdx = -1; ask(v); }
+// mobile keyboards often send Enter as "Unidentified" (key 229), so the form's submit is the reliable path there
+$("#kbdForm").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
 addEventListener("keydown", (e) => {
   if (e.target === kbd) return;
   if (e.key === "Escape") escPane();
@@ -479,12 +482,15 @@ addEventListener("keydown", (e) => {
 // ======================================================================
 const tc = document.createElement("canvas"), tx = tc.getContext("2d");
 const cell = { w: 10, h: 20, fs: 20, x0: 0, y0: 0 }; let COLS = 80, ROWS = 24;
+let VW = innerWidth, VH = innerHeight, VT = 0; // the visible viewport: shrinks when a phone keyboard opens
 function layoutText() {
   const scale = Math.min(devicePixelRatio, 2) * cfg.resolution;
-  tc.width = Math.floor(innerWidth * scale); tc.height = Math.floor(innerHeight * scale);
-  const fs = cfg.fontSize * scale; tx.font = `${fs}px VT323, monospace`;
-  const margin = 0.025 + cfg.curvature * 0.03;
-  Object.assign(cell, { fs, w: tx.measureText("M").width, h: fs * 1.05, x0: tc.width * margin + 14 * scale, y0: tc.height * margin + 6 * scale });
+  tc.width = Math.floor(VW * scale); tc.height = Math.floor(VH * scale);
+  const margin = 0.025 + cfg.curvature * 0.03, x0 = tc.width * margin + 14 * scale;
+  // phones: shrink the type so a line still holds ~46 characters (never below 15px)
+  tx.font = `${100}px VT323, monospace`; const ratio = tx.measureText("M").width / 100;
+  const fs = Math.min(cfg.fontSize * scale, Math.max(15 * scale, (tc.width - x0 * 2) / (46 * ratio))); tx.font = `${fs}px VT323, monospace`;
+  Object.assign(cell, { fs, w: tx.measureText("M").width, h: fs * 1.05, x0, y0: tc.height * margin + 6 * scale });
   COLS = Math.floor((tc.width - cell.x0 * 2) / cell.w); ROWS = Math.floor((tc.height - cell.y0 * 2) / cell.h);
 }
 let hits = [], hoverKey = null, paneBox = null;
@@ -613,16 +619,18 @@ function drawScreen(t) {
   suggestions.forEach((s, i) => { const seg = btn(s, "sug:" + i, () => ask(s), TXT); if (rowLen(cur) + seg.t.length + 1 > COLS) { sugRows.push(cur); cur = []; } cur.push(seg, gap()); });
   if (cur.length) sugRows.push(cur);
   // reserve room for the tallest follow-up list, so suggestions coming and going never resize the log
-  const sugH = Math.max(sugRows.length, ...Object.values(FOLLOW).map((l) => fitRows(l.map((q) => `[${q}] `))));
+  // phones skip that and let the prompt follow the text like a real terminal, instead of sitting under an empty screen
+  const compact = COLS < 60;
+  const sugH = compact ? sugRows.length : Math.max(sugRows.length, ...Object.values(FOLLOW).map((l) => fitRows(l.map((q) => `[${q}] `))));
   while (sugRows.length < sugH) sugRows.unshift([]);
-  const promptR = ROWS - 1, sugTop = promptR - sugRows.length - (sugRows.length ? 0 : 0), sepR = sugTop - 1;
-  const logRows = Math.max(4, sepR);
   const split = pane && COLS >= 60, share = pane?.kind === "peek" ? (COLS >= 110 ? 0.64 : 0.58) : (COLS >= 110 ? 0.42 : 0.38);
   const leftCols = split ? Math.floor(COLS * share) : COLS;
   const lc = pane && !split ? 0 : leftCols;
+  const all = []; if (lc > 0) blocks.forEach((b) => { const r = b.render(lc, t); b.rows = r.length; all.push(...(b.revealed ? r : r.slice(0, Math.floor(b.rev || 0)))); });
+  const promptR = compact && !pane ? Math.min(ROWS - 1, all.length + 1 + sugRows.length) : ROWS - 1, sugTop = promptR - sugRows.length, sepR = sugTop - 1;
+  const logRows = Math.max(compact && !pane ? 0 : 4, sepR);
   // log
   if (lc > 0) {
-    const all = []; blocks.forEach((b) => { const r = b.render(lc, t); b.rows = r.length; all.push(...(b.revealed ? r : r.slice(0, Math.floor(b.rev || 0)))); });
     const maxScroll = Math.max(0, all.length - logRows); scroll = Math.min(scroll, maxScroll);
     const start = Math.max(0, all.length - logRows - scroll);
     all.slice(start, start + logRows).forEach((r, i) => drawRow(r, 0, i, lc));
@@ -724,19 +732,21 @@ function makeFB() {
 function bindQuad(p) { const loc = gl.getAttribLocation(p, "p"); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0); }
 function hex(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; }
 function resize() {
-  layoutText();
   const s = Math.min(devicePixelRatio, 2);
-  canvas.width = innerWidth * s; canvas.height = innerHeight * s;
+  const vv = visualViewport; VW = vv ? vv.width : innerWidth; VH = vv ? vv.height : innerHeight; VT = vv ? vv.offsetTop : 0;
+  Object.assign(canvas.style, { top: VT + "px", height: VH + "px" });
+  layoutText();
+  canvas.width = VW * s; canvas.height = VH * s;
   makeFB();
 }
 
 // screen ↔ video-memory mapping through the same barrel the shader uses
 function barrel(x, y) { let u = x * 2 - 1, v = y * 2 - 1; const ox = (Math.abs(v) / 6) * cfg.curvature, oy = (Math.abs(u) / 4) * cfg.curvature; u += u * ox * ox * 3; v += v * oy * oy * 3; return [u * 0.5 + 0.5, v * 0.5 + 0.5]; }
-function screenToTex(cx, cy) { const [u, v] = barrel(cx / innerWidth, 1 - cy / innerHeight); return [u * tc.width, (1 - v) * tc.height]; }
+function screenToTex(cx, cy) { const [u, v] = barrel(cx / VW, 1 - (cy - VT) / VH); return [u * tc.width, (1 - v) * tc.height]; }
 function texToScreen(px, py) {
   const tu = px / tc.width, tv = 1 - py / tc.height; let u = tu, v = tv;
   for (let i = 0; i < 10; i++) { const [bu, bv] = barrel(u, v); u -= bu - tu; v -= bv - tv; }
-  return [u * innerWidth, (1 - v) * innerHeight];
+  return [u * VW, (1 - v) * VH + VT];
 }
 
 // live site overlay: positioned over the pane body, inside the bent glass
@@ -874,6 +884,8 @@ function applyTint() {
 }
 applyTint();
 addEventListener("resize", resize);
+visualViewport?.addEventListener("resize", resize);
+visualViewport?.addEventListener("scroll", resize);
 document.fonts.load("24px VT323").finally(() => { resize(); boot(); requestAnimationFrame(frame); });
 </script>
 </body>
