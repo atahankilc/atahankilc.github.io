@@ -54,6 +54,8 @@ const GANTT = [
   { key: "check24", label: "CHECK24", short: "CHECK24", lane: "work", from: "2026-07", to: "now" },
 ];
 const ALIASES = {
+  onlypanels: ["onlypanels", "only panels", "solar", "reonic", "heat pump", "battery", "photovolta"],
+  forge: ["prompt to cad", "prompt-to-cad", "sphere", "forge", "cadquery", " step file", "text to cad"],
   harmos: ["harmos", " cad"], bugsense: ["bugsense", "bug sense", " uti", "thesis", " tez", "medical", "diagnos"],
   steward: ["steward", "talk to your building", "your building", "synera", "indoor", "navigation", "industrial agents"], sharksight: ["sharksight", "shark", " bmw"],
   northstar: ["north star", "northstar", "ideation"], router: ["routemaxx", "router", "routing", "tum.ai", "slop"],
@@ -174,6 +176,7 @@ function rewrap(r, n) {
 }
 const NB = (s) => s.replace(/ /g, "\u00a0");
 // a project's stack as [tags]; short views show the first n and point to the architecture view for the rest
+const kindOf = (p) => p.award ? `${p.kind} · ★ ${p.award.split(" · ")[0]}` : p.kind;   // "Product · ★ 1st place" in the list
 const tags = (p, n = Infinity) => p.stack.slice(0, n).map((s) => NB(`[${s}]`)).join(" ") + (p.stack.length > n ? `  +${p.stack.length - n} more in architecture` : "");   // keep "[B-Rep kernel]" or "──▶ [ Engine ]" on one line
 const btn = (label, key, fn, b = HOT) => S(`[${label}]`, b, { act: { key, fn } });
 const gap = (n = 1) => S(" ".repeat(n), TXT);
@@ -230,7 +233,7 @@ const W = {
         C.projects.forEach((p) => {
           const act = { key: "open:" + p.id, fn: () => ask(`tell me about ${p.title}`) }, yr = p.when || p.year, demo = p.live ? "● live" : "○ src";
           rows.push([S(pad("▸ " + p.title, cols - yr.length - demo.length - 2), HOT, { act }), S(yr + "  ", DIM, { act }), S(demo, p.live ? HOT : TXT, { act })],
-            [S(pad("  " + p.kind, cols), DIM, { act })], []);
+            [S(pad("  " + kindOf(p), cols), p.award ? TXT : DIM, { act })], []);
         });
         rows.push([S("tap a project to open it", DIM)]);
         return rows;
@@ -240,7 +243,7 @@ const W = {
       rows.push([S("─".repeat(Math.min(cols, tw + (what ? ww : 0) + 22)), DIM)]);
       C.projects.forEach((p) => {
         const act = { key: "open:" + p.id, fn: () => ask(`tell me about ${p.title}`) }, sel = pane?.kind === "peek" && pane.id === p.id;
-        rows.push([S(sel ? " ▸ " : "   ", HOT), S(pad(p.title, tw), HOT, { act, inv: sel }), ...(what ? [S(pad(p.kind, ww), TXT, { act })] : []),
+        rows.push([S(sel ? " ▸ " : "   ", HOT), S(pad(p.title, tw), HOT, { act, inv: sel }), ...(what ? [S(pad(kindOf(p), ww), p.award ? HOT : TXT, { act })] : []),
           S(pad(p.when || p.year, 12), TXT, { act }), S(p.live ? "● live" : "○ src", p.live ? HOT : TXT, { act })]);
       });
       rows.push([], [S("hover or ↑↓ to preview · click or enter to open", DIM)]);
@@ -252,7 +255,7 @@ const W = {
     render(cols) {
       return box(p.id, (iw) => {
         const rows = [], cur = [];
-        rows.push([S(p.title.toUpperCase(), HOT)], [S(`${p.kind} · ${p.when || p.year}`, DIM)], []);
+        rows.push([S(p.title.toUpperCase(), HOT)], [S(`${p.kind} · ${p.when || p.year}`, DIM)], ...(p.award ? [[S("★ " + p.award, HOT)]] : []), []);
         wrapInto(rows, cur, p.blurb, TXT, iw); rows.push(cur.splice(0), []);
         wrapInto(rows, cur, tags(p, PHONE ? 6 : 10), DIM, iw); rows.push(cur.splice(0), []);
         const bs = [];
@@ -375,13 +378,18 @@ function* offlineTwin(raw) {
   if (has(q, [" thanks", " thank you", " thx", "teşekkür", "sağol"])) { yield T("Anytime. Anything else about my work?"); return; }
   if (pid && !has(q, ["timeline", "career"])) {
     const p = P[pid];
-    yield T(`${p.title}: ${p.kind.toLowerCase()}, ${(p.when || p.year).replace("—", "ongoing").trim()}. `);
+    yield T(`${p.title}: ${p.kind.toLowerCase()}, ${(p.when || p.year).replace("—", "ongoing").trim()}. ${p.award ? `It won ${p.award.replace(" · ", " at ")}. ` : ""}`);
     yield T(PHONE ? (p.live ? "The live site is one tap away below. It's real, you can click around in it." : "No public demo for this one, but the architecture below shows how it's put together.")
       : p.live ? "I've put the live site on the right. It's real, you can click around in it." : "No public demo for this one, so the right side shows how it's put together.");
     yield X("open_project", { id: pid }); return;
   }
   if (has(q, ["timeline", "career", "experience", "history", "journey", "worked", " jobs", " job ", "employ", " path", "roadmap", "deneyim", "kariyer", "tecrübe", "background", "havelsan", "nextaim", "check24"])) {
     yield T("Here's my path so far, work and studies. Click any bar for the full story."); yield X("show_timeline"); return;
+  }
+  if (has(q, [" won", " win", "award", "prize", "hackathon", "1st", "first place", "ödül", "birinci", "kazan"])) {
+    const w = C.projects.filter((p) => p.award);
+    yield T(`${w.length === 2 ? "Two firsts" : "First places"} in November 2026: ${w.map((p) => `${p.title} at ${p.award.split(" · ").slice(1).join(" · ")}`).join(", and ")}. They're marked ★ in the list.`);
+    yield X("show_projects"); return;
   }
   if (has(q, ["project", "built", " build", "portfolio", " demo", "work on", "side project", "proje", "neler yaptın", "show me what", "what have you made"])) {
     yield T(`Here's what I've built. The ● ones are live. ${PHONE ? "Tap one to open it." : "Point at one to preview it on the right, click to open it."}`); yield X("show_projects"); return;
@@ -624,7 +632,7 @@ function drawPane(px, py, pw, ph, t) {
       hits.push({ x: X, y: iy, w: Wd, h: ih, act: { key: "peek:site", fn: open } });
       if (t - pane.since > 0.3) live = { x: X, y: iy, w: Wd, h: ih, src: p.live, zoom: Math.min(1, Wd / 1280), passive: true };
     }
-    const rows = [[S(p.title.toUpperCase(), HOT), S("  " + (p.when || p.year), DIM)], [S(p.kind, DIM)], []], cur = [];
+    const rows = [[S(p.title.toUpperCase(), HOT), S("  " + (p.when || p.year), DIM)], [S(p.kind, DIM)], ...(p.award ? [[S("★ " + p.award, HOT)]] : []), []], cur = [];
     wrapInto(rows, cur, p.blurb, TXT, pw); rows.push(cur.splice(0), [], [S("// data flow", DIM)]);
     wrapInto(rows, cur, (a.flow || []).map((s, k) => NB((k ? "──▶ " : "") + `[ ${s} ]`)).join(" "), HOT, pw); rows.push(cur.splice(0), []);
     wrapInto(rows, cur, tags(p, 10), DIM, pw); rows.push(cur.splice(0), []);

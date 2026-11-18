@@ -11,16 +11,18 @@ window.CONTENT = {
   about: [
     "AI & full-stack software engineer in Munich. I build AI products end to end: the agent and LLM layer, the React and React Native front ends people touch, and the back ends that keep the answers honest.",
     "Since April 2026 I've been building BugSense for my M.Sc. thesis at TUM: the software of an AI-based UTI diagnostic. A mini-incubator images a paper cassette, a model proposes infection, species and bacterial load, and a clinician approves, edits or rejects every result before it goes anywhere. Instead of a 48–72 hour lab culture, the answer comes back the same day. Under EU law that makes it both an in-vitro diagnostic (IVDR) and a high-risk AI system (AI Act).",
+    "In November 2026 I took first place twice in a row: in the Reonic challenge with OnlyPanels (solar, battery and heat-pump designs an expert planner would sign), and at Sphere Forge #1 with an agent that turns a design brief and eight rendered views into a STEP solid.",
     "Alongside the thesis I'm a working student at CHECK24, building the customer area and aftersales for CHECK24 Autoteile across PHP/Symfony, React and SQL. Before that: a year and a half at NextAim shipping web, iOS and Android apps with AI chat on Azure-hosted LLMs, and two and a half years at HAVELSAN on NATO-standard simulators and real-time C++.",
   ],
   now: [
     "Full-stack @ CHECK24 Autoteile",
     "M.Sc. Informatics @ TUM — thesis on BugSense",
     "Building Harmos, an AI-native CAD platform",
+    "1st place twice in Nov 2026: Reonic challenge (OnlyPanels) and Sphere Forge #1 (Prompt-to-CAD)",
   ],
   // the whoami card: three short columns instead of the about paragraphs (project ids make a line clickable)
   glance: [
-    { title: "now", items: [["CHECK24 Autoteile", "full-stack · PHP · React · SQL"], ["TUM", "M.Sc. Informatics"]] },
+    { title: "now", items: [["CHECK24 Autoteile", "full-stack · PHP · React · SQL"], ["TUM", "M.Sc. Informatics"], ["★ 1st place · OnlyPanels", "Reonic challenge 2026", "onlypanels"], ["★ 1st place · Prompt-to-CAD", "Sphere Forge #1", "forge"]] },
     { title: "building", items: [["BugSense · M.Sc. thesis", "AI-based UTI diagnostic: a model reads an imaged cassette, a clinician approves every result. Same-day answer instead of a 48–72\u00a0h lab culture.", "bugsense"]] },
     { title: "before", items: [["NextAim · 1.5 y", "web · iOS · Android · LLM chat"], ["HAVELSAN · 2.5 y", "NATO simulators · real-time C++"]] },
   ],
@@ -30,6 +32,18 @@ window.CONTENT = {
       blurb: "The website I built for BugSense, an AI-assisted UTI diagnostic (that's the live link). My M.Sc. thesis is the device software behind it: re-architected as a regulation-ready SaMD under IEC 62304 / ISO 14971, with on-device acquisition, cloud inference, audit logging and clinician reporting. The thesis isn't public.",
       stack: ["Python", "Django", "Django REST Framework", "OpenAPI (drf-spectacular)", "FastAPI", "ONNX Runtime", "NumPy", "Pillow", "PostgreSQL 16", "Row-Level Security", "S3-compatible storage", "Argon2", "JWT", "TOTP 2FA", "cryptography", "Expo", "React Native", "React Native Web", "Expo Router", "TanStack Query", "Zustand", "NativeWind", "MMKV", "expo-camera", "Electron", "electron-builder", "PyInstaller", "Docker Compose", "Caddy", "pytest", "Jest", "Ruff", "mypy", "IVDR", "EU AI Act", "IEC 62304", "ISO 14971", "Next.js 16 (website)", "next-intl", "Tailwind CSS v4"],
       link: null, live: "https://bugsensedx.com", liveLabel: "website", shape: "dish",
+    },
+    {
+      id: "onlypanels", title: "OnlyPanels", year: "2026", kind: "Product", award: "1st place · Reonic challenge 2026",
+      blurb: "Solar, battery, wallbox and heat-pump designs the way an expert planner would propose them. It fuses open data about a home (3D roofs, aerial photos, sun, shade, census); a deterministic engine, not the LLM, sets every number.",
+      stack: ["Python 3.12", "FastAPI", "Uvicorn", "pandas", "NumPy", "scikit-learn", "pyproj", "hourly energy simulation (PVGIS weather years)", "Claude (vision + tool use)", "MCP", "ElevenLabs (speech in/out)", "TypeScript", "React 19", "Vite", "MapLibre GL", "three.js", "Web Workers", "LoD2 3D buildings", "DOP20 aerial photo", "Census 2022", "OpenStreetMap", "Photon", "uv", "pnpm", "pytest", "Ruff"],
+      link: "https://github.com/atahankilc/onlypanels", live: null, shape: "sun",
+    },
+    {
+      id: "forge", title: "Prompt-to-CAD", year: "2026", kind: "Product", award: "1st place · Sphere Forge #1",
+      blurb: "Turns a design brief and eight rendered views of a mechanical part into a STEP solid. A deterministic OpenCascade pipeline carves a valid shape first, then LLM agents write CadQuery and check it against the views.",
+      stack: ["Python 3.12", "CadQuery", "OpenCascade (OCP)", "NumPy", "OpenCV", "visual-hull carving", "line + arc outline fitting", "LLM agents (Claude, OpenAI)", "vLLM", "open-weight VLMs on RTX PRO 6000", "NVIDIA Brev", "Docker", "GitHub Actions", "AWS ECR + S3", "three.js", "occt-import-js", "uv", "pytest"],
+      link: "https://github.com/atahankilc/sphere-hackathon", live: null, shape: "cube",
     },
     {
       id: "northstar", title: "North Star", year: "2026", kind: "Product",
@@ -141,10 +155,10 @@ window.CONTENT = {
   skills: {
     "Front": ["TypeScript", "React", "Next.js", "React Native", "Expo", "Redux", "TanStack Query", "Zustand", "Tailwind", "NativeWind", "shadcn/Radix", "MUI", "React Hook Form", "Zod", "Reanimated", "Framer Motion", "Tiptap", "Electron", "Astro", "Vite"],
     "Back": ["Python", "FastAPI", "Pydantic", "Django REST", "Celery", "Node", "Express", "Prisma", "SQLAlchemy", "Alembic", "Java", "Spring Boot", "PHP", "Symfony", "WebSockets", "OpenAPI", "Stripe"],
-    "Data": ["Postgres", "pgvector", "Supabase", "Neon", "MongoDB", "Firebase", "Redis", "DuckDB", "ChromaDB", "Kafka"],
-    "AI": ["Agent design", "Tool use", "RAG", "Claude", "OpenAI", "Azure OpenAI", "Gemini", "Vercel AI SDK", "PyTorch", "ONNX", "OpenCV", "scikit-learn"],
+    "Data": ["Postgres", "pgvector", "Supabase", "Neon", "MongoDB", "Firebase", "Redis", "DuckDB", "ChromaDB", "pandas", "Kafka"],
+    "AI": ["Agent design", "Tool use", "MCP", "RAG", "Claude", "OpenAI", "Azure OpenAI", "Gemini", "Vercel AI SDK", "vLLM", "ElevenLabs", "PyTorch", "ONNX", "OpenCV", "scikit-learn"],
     "Auth": ["OAuth 2", "JWT", "Auth0", "Cognito", "Supabase RLS", "TOTP 2FA"],
-    "3D": ["three.js", "React Three Fiber", "build123d", "CadQuery", "Shapely", "NetworkX", "MapLibre", "Ray tracing", "Rasterization"],
+    "3D": ["three.js", "React Three Fiber", "build123d", "CadQuery", "OpenCascade", "Shapely", "NetworkX", "MapLibre", "Ray tracing", "Rasterization"],
     "Ops": ["Docker", "Nginx", "GitHub Actions", "AWS (Amplify, CDK, S3)", "GCP", "Azure", "Vercel", "Render", "EAS", "Sentry", "Grafana"],
     "Test": ["Vitest", "Jest", "Playwright", "pytest", "Testing Library", "Supertest"],
     "Low": ["C", "C++", "CMake", "Lua", "Real-time", "Embedded", "UDP sockets", "Unix shell"],
@@ -154,6 +168,8 @@ window.CONTENT = {
 // Dates (sort keys) for the projects. Months marked ~ are estimates from repo activity.
 (function () {
   const extra = {
+    onlypanels: { date: "2026-11", when: "Nov 2026" },
+    forge: { date: "2026-11", when: "Nov 2026" },
     harmos: { date: "2026-08", when: "Aug 2026" },
     bugsense: { date: "2026-04", when: "Apr 2026 —" },
     steward: { date: "2026-10", when: "Oct 2026 —" },
@@ -183,6 +199,39 @@ window.CONTENT = {
         "The AI only proposes. Its fields have the same shape as the released result, so a reviewer changes values, never structure. The model may abstain, and its confidence is stored but never shown until clinical evidence supports showing it.",
         "The research question: which regulatory requirements can the architecture itself guarantee, and which stay organisational or clinical tasks?",
         "Built with an AI coding agent working from a structured knowledge base of decisions, requirements, risks and rules.",
+      ],
+    },
+    onlypanels: {
+      summary: "Won first place in the Reonic challenge 2026. The finding behind it: 59% of solar requests match another customer's field for field, yet in 99% of those the experts still designed differently, by 6.3 kWp on average. They knew the roof, the shade, the street. So the work is gathering context, and a deterministic engine designs from it.",
+      flow: ["Address / answers", "12 sources", "Facts", "Engine", "Simulation", "Planner review", "Offer"],
+      parts: [
+        ["web/", "React + MapLibre + three.js: click a house in Munich, its 3D roof with fitted modules; nine optional homeowner pages; the planner's desk (design, cost, offer, proof)"],
+        ["engine/", "solar and battery sizes learned per installer from 1,041 past projects, catalog snapping, rules for heat pump, wallbox, grants and German energy law"],
+        ["simulation", "hourly own-power and savings on real Munich weather years from PVGIS, checked against HTW Berlin values"],
+        ["api/", "FastAPI; Claude reads the roof photo, the planner's sentence box and drives a voice agent through MCP tools, with ElevenLabs for speech"],
+      ],
+      decisions: [
+        "The language model never produces a design number: the engine does. Without keys everything runs on rules.",
+        "Every fact is tagged customer, measured, found or assumed; assumed facts must be confirmed before an offer goes out.",
+        "The review reruns the engine at the edges of each guessed answer and lists which one would still move the design.",
+        "Nothing leaves the homeowner's browser before Send, and they choose what goes; without an address it still extracts facts from words.",
+        "Scored once on 276 held-out projects: solar mean error 2.65 kWp against 3.06 (same design for all) and 4.02 (rule of thumb).",
+      ],
+    },
+    forge: {
+      summary: "Won first place at Sphere Forge #1. For each part the input is a written brief, facts.json (bounding box, volume, hole inventory) and eight orthographic views; the output is one solid in millimetres, ranked on nine hidden parts. Deterministic geometry first, a model only proposes, and a judge decides.",
+      flow: ["Brief + 8 views", "Visual hull", "Holes", "Recesses", "LLM agents", "Check", "STEP"],
+      parts: [
+        ["pipeline", "a box cut through view by view along silhouettes rebuilt from lines and arcs, then listed holes, mouths, pockets, rounds and curved recesses, each kept only if it fits"],
+        ["agents", "one agent per part writes CadQuery, runs ./check against facts.json and the views, and replaces the pipeline's file only with a better candidate"],
+        ["judge", "verify.py and judge.py score a solid against the inputs without ground truth; a 266-part local eval set with ground truth for development"],
+        ["dashboard", "inputs, our solid after every step, the diff against the truth in 3D"],
+      ],
+      decisions: [
+        "Every part has a valid file from the first second: boxes first, checkpointed writes, never a 0 from a crash or a kill.",
+        "Build for unseen parts: no threshold chosen on the nine practice parts.",
+        "Models compared by measurement: Claude Opus, several OpenAI models and open-weight VLMs served with vLLM on RTX PRO 6000s.",
+        "Shipped as a Docker image through CI to the organisers' registry; a push to main is a submission.",
       ],
     },
     northstar: {

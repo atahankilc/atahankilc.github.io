@@ -7,3 +7,7 @@ node_modules/
 Screenshot *.png
 Screen Recording *
 /cv (*).pdf
+assets/cv/*.aux
+assets/cv/*.log
+assets/cv/*.out
+assets/cv/cv.pdf

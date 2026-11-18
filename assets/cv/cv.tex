@@ -1,0 +1,155 @@
+% Atahan Kılıç — CV. Build: cd assets/cv && pdflatex cv.tex && cp cv.pdf ../cv.pdf
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1.6cm,top=1.3cm,bottom=1.4cm]{geometry}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{needspace}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\definecolor{link}{HTML}{1F5FA8}
+\hypersetup{colorlinks=true,urlcolor=link,linkcolor=link,pdfborder={0 0 0},
+  pdftitle={Atahan Kılıç - CV},pdfauthor={Atahan Kılıç}}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\titleformat{\section}{\large\bfseries}{}{0pt}{}[\vspace{-0.75em}\rule{\linewidth}{0.5pt}]
+\titlespacing*{\section}{0pt}{7pt}{3pt}
+\setlist[itemize]{label=$\circ$,leftmargin=1.1em,itemsep=1pt,parsep=0pt,topsep=1pt}
+
+\newcommand{\role}[4]{\textbf{#1}\hfill\textit{#2}\\\textit{#3}\ifx&#4&\else\ \textperiodcentered\ #4\fi}
+\newcommand{\proj}[2]{\needspace{4\baselineskip}\textbf{#1}\hfill\textit{#2}}
+\newcommand{\award}[1]{\textcolor{link}{\textbf{#1}}}
+\newcommand{\sep}{\enspace---\enspace}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries Atahan Kılıç}\\[3pt]
+  Munich, Germany\sep\href{mailto:atahan.kilc@gmail.com}{atahan.kilc@gmail.com}\sep+49 160 92431692\sep
+  \href{https://github.com/atahankilc}{GitHub}\sep\href{https://www.linkedin.com/in/atahan-kilic}{LinkedIn}\sep
+  \href{https://atahankilc.github.io}{Portfolio}
+\end{center}
+
+\section{Profile}
+AI \& full-stack software engineer who builds AI products end to end: the agent and LLM layer, React and React Native
+front ends, and Python / TypeScript back ends that keep the answers verifiable. Two first places at hackathons in
+November 2026. Experienced in production web and mobile apps and in distributed systems with high reliability
+requirements.
+
+\section{Work Experience}
+\role{Working Student Fullstack Developer}{Jul 2026 -- Present}{CHECK24 Vergleichsportal GmbH, Munich}{}
+\begin{itemize}
+  \item Improving the customer area / aftersales functionality of the CHECK24 Autoteile platform, adding new
+        customer-facing features using PHP, Symfony, React, and SQL.
+\end{itemize}
+\role{Working Student Software Developer}{Sep 2024 -- Mar 2026}{NextAim GmbH, Munich}{}
+\begin{itemize}
+  \item Developed and deployed cross-platform applications (Web, iOS, Android) using React, React Native, TypeScript,
+        Next.js, and Expo, owning deployments and App Store / Play Store releases.
+  \item Built AI-powered chat applications using Next.js and Vercel AI SDK, integrating with an Azure-hosted LLM and
+        improving reliability of chat, document upload, and message handling flows.
+  \item Developed a complex transportation management system with Supabase, focusing on relational data modeling,
+        advanced multi-table filtering, and backend-heavy workflows.
+  \item Implemented secure authentication, role-based access control, and subscription payments using Auth0,
+        AWS Cognito, Supabase RLS, and Stripe.
+\end{itemize}
+\role{Software Developer}{Aug 2023 -- Mar 2024}{HAVELSAN, Ankara}{}
+\begin{itemize}
+  \item Developed NATO-standard military messaging and training simulators, ensuring system correctness and reliability.
+  \item Built frontend interfaces using React and Redux Toolkit and backend services with Spring Boot, integrating with
+        a 20+ microservice ecosystem via Kafka.
+  \item Containerized and orchestrated the system using Docker, developing a custom management application to simplify
+        simulator control for non-technical military users.
+\end{itemize}
+\role{Candidate Engineer}{Nov 2021 -- Jul 2023}{HAVELSAN, Ankara}{}
+\begin{itemize}
+  \item Designed automated test suites using Java and JUnit, identifying critical edge cases in military communication
+        workflows.
+  \item Developed aviation communication protocol plugins and automated Wireshark plugin generation tools using Java and Lua.
+  \item Implemented real-time embedded software in C++, including interrupt handling and message translation for
+        operational systems.
+\end{itemize}
+
+\section{Projects}
+\proj{OnlyPanels -- Home Energy Planning \ \award{1st Place, Reonic Challenge 2026}}{Nov 2026}
+\begin{itemize}
+  \item Proposes solar, battery, wallbox and heat-pump designs like an expert planner by fusing open data about a
+        home (3D roofs, aerial photos, sun, shade, census); a deterministic engine, not the LLM, sets every number.
+  \item Python, FastAPI, scikit-learn, React, MapLibre, three.js, Claude (vision, MCP voice agent).
+        \href{https://github.com/atahankilc/onlypanels}{GitHub}
+\end{itemize}
+\proj{Prompt-to-CAD Agent \ \award{1st Place, Sphere Forge \#1}}{Nov 2026}
+\begin{itemize}
+  \item Turns a design brief and eight rendered views of a mechanical part into a STEP solid: a deterministic
+        OpenCascade pipeline carves a valid shape first, then LLM agents write CadQuery and check it against the views.
+  \item Python, CadQuery, OpenCascade, OpenCV, Claude, OpenAI, Docker, GitHub Actions.
+        \href{https://github.com/atahankilc/sphere-hackathon}{GitHub}
+\end{itemize}
+\proj{BugSense -- AI-Assisted UTI Diagnostic Software (SaMD, EU MDR)}{Apr 2026 -- Present}
+\begin{itemize}
+  \item Building on my ongoing thesis, leading the end-to-end redesign of an early-stage implementation into a
+        regulation-ready medical device under IEC 62304 and ISO 14971, covering regulatory analysis, requirements
+        engineering, architecture, and full-stack implementation and DevOps.
+  \item Authoring the engineering documentation tree: regulatory analysis (MDR, GDPR, EU AI Act), device
+        classification, requirements with end-to-end traceability, and risk-control mapping.
+  \item Built and shipped the bilingual \href{https://bugsensedx.com}{BugSense website} with Next.js, Tailwind CSS and
+        next-intl: per-locale SEO, static export, a JSON-driven blog.
+\end{itemize}
+\proj{Steward -- Talk to Your Building}{Oct 2026}
+\begin{itemize}
+  \item Indoor assistant for 280 buildings: Claude agents with tool use answer where things are and how to get there
+        for a wheelchair or trolley; a deterministic geometry and route-graph core (NetworkX, Shapely) computes every
+        answer. FastAPI, React, three.js, MapLibre, Supabase.
+        \href{https://steward-io.vercel.app}{Live demo}
+\end{itemize}
+\proj{Harmos -- AI-Native CAD Platform}{Aug 2026}
+\begin{itemize}
+  \item Every capability is a typed command over one versioned protocol, so the AI and the GUI are equal clients;
+        geometry is addressed by predicate selectors and verified by the B-Rep engine. Python, build123d, React, three.js.
+\end{itemize}
+\proj{TATE AI -- Teaching Assistant Platform}{2025}
+\begin{itemize}
+  \item Validated a real problem in teachers' documentation and built a 0$\to$1 voice-driven product with Expo and the
+        Gemini API that generates structured lesson, class and student records; field-tested, SUS 83/100.
+\end{itemize}
+\proj{Earlier}{}
+\begin{itemize}
+  \item \textbf{DNSi (CHECK24 collaboration):} React/TypeScript components and CI/CD with GitHub Actions and Docker for a
+        DNS monitoring platform.
+  \item \textbf{AI Coding Exercises (Eclipse Theia):} AI learning module with chat, exercise generation and
+        context-aware code assistance, contributed to the Eclipse Theia open-source project.
+\end{itemize}
+
+\section{Education}
+\textbf{M.Sc. Informatics --- Technical University of Munich}\hfill\textit{2024 -- Present}\\
+\textit{Master's Thesis -- BugSense: Deployment-Ready Architecture for an AI-Assisted UTI Diagnostic Device}
+\begin{itemize}
+  \item Designing an inter-service pipeline that connects on-device acquisition, cloud-based inference, and
+        clinician-facing reporting for a cassette-imaging system.
+  \item Developing a hybrid cloud--local deployment model that balances inference latency, data-residency obligations,
+        and offline-operation constraints common to clinical point-of-care environments.
+\end{itemize}
+\textbf{B.Sc. Computer Engineering --- Middle East Technical University}\hfill\textit{2018 -- 2023}\\
+cGPA: 3.71 / 4.00 (equivalent to 1.4 on the German grading scale)
+
+\section{Skills}
+\textbf{AI \& Agents:} Agent design, tool use, MCP, RAG, Claude, OpenAI / Azure OpenAI, Gemini, Vercel AI SDK, vLLM,
+ElevenLabs, scikit-learn, OpenCV, ONNX\\
+\textbf{Frontend \& Mobile:} React, TypeScript, Next.js, React Native, Expo, Redux TK, TanStack Query, Zustand,
+Tailwind CSS, three.js / React Three Fiber, MapLibre GL\\
+\textbf{Backend \& APIs:} Python, FastAPI, Django REST, pandas, Java, Spring Boot, Node.js, PHP, Symfony, SQL, REST,
+WebSockets, Webhooks\\
+\textbf{Data:} PostgreSQL, pgvector, Supabase, Firebase, Redis, DuckDB, Kafka\\
+\textbf{Cloud \& DevOps:} Docker, Docker Compose, GitHub Actions, AWS (Amplify, CDK, S3), Vercel, Render, EAS,
+Grafana, Sentry\\
+\textbf{Auth \& Payments:} Auth0, AWS Cognito, RBAC, Supabase RLS, Stripe\\
+\textbf{Systems \& Geometry:} C, C++, embedded and real-time programming, OpenCascade, CadQuery, build123d
+
+\section{Languages}
+\textbf{English:} C1 (Professional Working Proficiency)\quad
+\textbf{German:} A2\quad
+\textbf{Turkish:} Native
+
+\end{document}
