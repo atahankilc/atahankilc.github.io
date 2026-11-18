@@ -384,8 +384,8 @@ function* offlineTwin(raw) {
       : p.live ? "I've put the live site on the right. It's real, you can click around in it." : "No public demo for this one, so the right side shows how it's put together.");
     yield X("open_project", { id: pid }); return;
   }
-  if (has(q, ["startup", "start-up", "founder", "founding", "kurucu", "girişim", "manage&more", "manage and more", "manage & more", "unternehmertum", "context layer"])) {
-    yield T("Since October 2026 I'm co-founding a startup with a friend in UnternehmerTUM's Manage&More: a context layer for AI."); yield X("show_timeline"); return;
+  if (has(q, ["granat", "startup", "start-up", "founder", "founding", "kurucu", "girişim", "manage&more", "manage and more", "manage & more", "unternehmertum", "context layer"])) {
+    yield T("Since October 2026 I'm co-founding Granat with a friend in UnternehmerTUM's Manage&More: a context layer for AI."); yield X("show_timeline"); return;
   }
   if (has(q, ["timeline", "career", "experience", "history", "journey", "worked", " jobs", " job ", "employ", " path", "roadmap", "deneyim", "kariyer", "tecrübe", "background", "havelsan", "nextaim", "check24"])) {
     yield T("Here's my path so far, work and studies. Click any bar for the full story."); yield X("show_timeline"); return;

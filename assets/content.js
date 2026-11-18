@@ -95,8 +95,8 @@ window.CONTENT = {
   // the full story behind each timeline bar (shown when a bar is clicked); keys match GANTT in index.html
   roles: {
     startup: {
-      org: "Startup · Manage&More", role: "Co-founder", where: "Munich",
-      story: "Co-founding a startup with a friend in UnternehmerTUM's Manage&More: a context layer for AI.",
+      org: "Granat · Manage&More", role: "Co-founder", where: "Munich",
+      story: "Co-founding Granat with a friend in UnternehmerTUM's Manage&More: a context layer for AI.",
       did: [],
       tags: [],
     },
@@ -344,7 +344,7 @@ window.CONTENT = {
   window.CONTENT.availability = "Open to full-time roles · Munich / EU";
   window.CONTENT.languages = [["Turkish", "Native"], ["English", "C1"], ["German", "A2"]];
   window.CONTENT.timeline = [
-    { date: "2026-10", end: "now", lane: "work", title: "Startup · Manage&More", role: "Co-founder", text: "Co-founding a startup in UnternehmerTUM's Manage&More: a context layer for AI.", tags: [] },
+    { date: "2026-10", end: "now", lane: "work", title: "Granat · Manage&More", role: "Co-founder", text: "Co-founding Granat in UnternehmerTUM's Manage&More: a context layer for AI.", tags: [] },
     { date: "2026-07", end: "now", lane: "work", title: "CHECK24", role: "Working Student, Full-stack", text: "Customer area and aftersales for CHECK24 Autoteile.", tags: ["PHP", "Symfony", "React", "SQL"] },
     { date: "2024-09", end: "2026-03", lane: "work", title: "NextAim", role: "Working Student, Software", text: "Web, iOS and Android with Expo; owned App Store / Play releases. AI chat on Azure LLMs, a Supabase transport management system, Auth0 / Cognito / RLS, Stripe.", tags: ["React Native", "Next.js", "Supabase", "Stripe"] },
     { date: "2024-04", end: "now", lane: "edu", title: "TUM", role: "M.Sc. Informatics", text: "Thesis (since Apr 2026): BugSense, the software of an AI-based UTI diagnostic, built so that IVDR and AI Act obligations hold by architecture.", tags: [] },
